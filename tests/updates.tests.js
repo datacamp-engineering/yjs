@@ -330,7 +330,7 @@ export const testEncodeStateAsUpdates = tc => {
   Y.applyUpdate(yDoc, Y.encodeStateAsUpdate(remoteDoc))
 
   const update = Y.encodeStateAsUpdate(yDoc);
-  const updates = Y.encodeStateAsUpdates(yDoc);
+  const updates = Y.encodeStateAsUpdates(yDoc, 1);
   const mergedUpdate = Y.mergeUpdates(updates);
 
   const yDocWithUpdate = new Y.Doc();
@@ -371,7 +371,7 @@ export const testEncodeStateAsUpdatesWithMaps = tc => {
   }
 
   const update = Y.encodeStateAsUpdate(yDoc);
-  const updates = Y.encodeStateAsUpdates(yDoc);
+  const updates = Y.encodeStateAsUpdates(yDoc, 2);
   const mergedUpdate = Y.mergeUpdates(updates);
 
   const yDocWithUpdate = new Y.Doc();
@@ -388,7 +388,20 @@ export const testEncodeStateAsUpdatesWithMaps = tc => {
   Y.applyUpdate(yDocWithMergedUpdate, mergedUpdate);
   t.compareObjects(yDocWithMergedUpdate.getMap('myMap').toJSON(), expectedMap);
 
-  // 1 client did 4 updates
-  // 1 delete set
-  t.compare(4 + 1, updates.length)
+  t.compare(4, updates.length)
+
+  const partial = new Y.Doc()
+  Y.applyUpdate(partial, updates[0])
+  t.compareObjects(partial.getMap('myMap').toJSON(), {}, 'after update 1');
+
+  Y.applyUpdate(partial, updates[1])
+  // bar is not here because the item is in the delete set
+  t.compareObjects(partial.getMap('myMap').toJSON(), {foo: 'foo1'}, 'after update 2');
+
+  Y.applyUpdate(partial, updates[2])
+  t.compareObjects(partial.getMap('myMap').toJSON(), {foo: 'foo1', quux: 'quux1'}, 'after update 3');
+
+  Y.applyUpdate(partial, updates[3])
+  t.compareObjects(partial.getMap('myMap').toJSON(), {foo: 'foo1', bar: 'bar2', quux: 'quux1'}, 'after update 4');
+
 }
