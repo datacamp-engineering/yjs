@@ -347,9 +347,9 @@ export const testEncodeStateAsUpdates = tc => {
   Y.applyUpdate(yDocWithMergedUpdate, mergedUpdate);
   t.compareStrings(yDocWithMergedUpdate.getText('textBlock').toString(), 'nenor');
 
-  // 2 clients did updates
+  // 2 clients did updates: 4 + 1
   // 1 (empty) delete set
-  t.compare(3, updates.length)
+  t.compare((4 + 1) + 1, updates.length)
 }
 
 
