@@ -520,6 +520,24 @@ export const writeStateAsUpdate = (encoder, doc, targetStateVector = new Map()) 
 }
 
 /**
+ * Write all the document a combination of update messages. If you specify the state of the remote client (`targetStateVector`) it will
+ * only write the operations that are missing.
+ *
+ * @param {() => UpdateEncoderV1 | UpdateEncoderV2} getEncoder
+ * @param {Doc} doc
+ * @param {Map<number,number>} [targetStateVector] The state of the target that receives the update. Leave empty to write all known structs
+ * @return {Array<UpdateEncoderV1 | UpdateEncoderV2>}
+ *
+ * @function
+ */
+export const writeStateAsUpdates = (getEncoder, doc, targetStateVector = new Map()) => {
+  const encoder = getEncoder();
+  writeClientsStructs(encoder, doc.store, targetStateVector)
+  writeDeleteSet(encoder, createDeleteSetFromStructStore(doc.store))
+  return [encoder]
+}
+
+/**
  * Write all the document as a single update message that can be applied on the remote document. If you specify the state of the remote client (`targetState`) it will
  * only write the operations that are missing.
  *
@@ -575,15 +593,16 @@ export const encodeStateAsUpdate = (doc, encodedTargetStateVector) => encodeStat
  *
  * @param {Doc} doc
  * @param {Uint8Array} [encodedTargetStateVector] The state of the target that receives the update. Leave empty to write all known structs
- * @param {UpdateEncoderV1 | UpdateEncoderV2} [encoder]
+ * @param {() => UpdateEncoderV1 | UpdateEncoderV2} [getEncoder]
  * @return {Uint8Array[]}
  *
  * @function
  */
-export const encodeStateAsUpdatesV2 = (doc, encodedTargetStateVector = new Uint8Array([0]), encoder = new UpdateEncoderV2()) => {
+export const encodeStateAsUpdatesV2 = (doc, encodedTargetStateVector = new Uint8Array([0]), getEncoder = () => new UpdateEncoderV2()) => {
   const targetStateVector = decodeStateVector(encodedTargetStateVector)
-  writeStateAsUpdate(encoder, doc, targetStateVector)
-  const updates = [encoder.toUint8Array()]
+  const encoders = writeStateAsUpdates(getEncoder, doc, targetStateVector)
+  const actualUpdates = encoders.map(encoder => encoder.toUint8Array())
+  const updates = []
   // also add the pending updates (if there are any)
   if (doc.store.pendingDs) {
     updates.push(doc.store.pendingDs)
@@ -591,14 +610,15 @@ export const encodeStateAsUpdatesV2 = (doc, encodedTargetStateVector = new Uint8
   if (doc.store.pendingStructs) {
     updates.push(diffUpdateV2(doc.store.pendingStructs.update, encodedTargetStateVector))
   }
-  if (updates.length > 1) {
+  if (updates.length > 0) {
+    const encoder = getEncoder()
     if (encoder.constructor === UpdateEncoderV1) {
-      return [mergeUpdates(updates.map((update, i) => i === 0 ? update : convertUpdateFormatV2ToV1(update)))]
+      return [...actualUpdates, mergeUpdates(updates.map((update, i) => i === 0 ? update : convertUpdateFormatV2ToV1(update)))]
     } else if (encoder.constructor === UpdateEncoderV2) {
-      return [mergeUpdatesV2(updates)]
+      return [...actualUpdates, mergeUpdatesV2(updates)]
     }
   }
-  return [updates[0]]
+  return actualUpdates
 }
 
 /**
@@ -613,7 +633,7 @@ export const encodeStateAsUpdatesV2 = (doc, encodedTargetStateVector = new Uint8
  *
  * @function
  */
-export const encodeStateAsUpdates = (doc, encodedTargetStateVector) => encodeStateAsUpdatesV2(doc, encodedTargetStateVector, new UpdateEncoderV1())
+export const encodeStateAsUpdates = (doc, encodedTargetStateVector) => encodeStateAsUpdatesV2(doc, encodedTargetStateVector, () => new UpdateEncoderV1())
 
 /**
  * Read state vector from Decoder and return as Map
