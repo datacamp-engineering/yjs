@@ -322,7 +322,12 @@ export const testEncodeStateAsUpdates = tc => {
   yText.applyDelta([{ insert: 'o' }])
   yText.applyDelta([{ insert: 'n' }])
   yText.applyDelta([{ insert: 'e' }])
-  yText.applyDelta([{ insert: 'n' }])
+
+  const remoteDoc = new Y.Doc()
+  Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(yDoc))
+  remoteDoc.getText('textBlock').applyDelta([{ insert: 'n' }])
+
+  Y.applyUpdate(yDoc, Y.encodeStateAsUpdate(remoteDoc))
 
   const update = Y.encodeStateAsUpdate(yDoc);
   const updates = Y.encodeStateAsUpdates(yDoc);
@@ -341,6 +346,10 @@ export const testEncodeStateAsUpdates = tc => {
   const yDocWithMergedUpdate = new Y.Doc();
   Y.applyUpdate(yDocWithMergedUpdate, mergedUpdate);
   t.compareStrings(yDocWithMergedUpdate.getText('textBlock').toString(), 'nenor');
+
+  // 2 clients did updates
+  // 1 (empty) delete set
+  t.compare(3, updates.length)
 }
 
 

@@ -531,10 +531,26 @@ export const writeStateAsUpdate = (encoder, doc, targetStateVector = new Map()) 
  * @function
  */
 export const writeStateAsUpdates = (getEncoder, doc, targetStateVector = new Map()) => {
-  const encoder = getEncoder();
-  writeClientsStructs(encoder, doc.store, targetStateVector)
-  writeDeleteSet(encoder, createDeleteSetFromStructStore(doc.store))
-  return [encoder]
+
+  const deleteEncoder = getEncoder();
+  // no updates / structs to write
+  encoding.writeVarUint(deleteEncoder.restEncoder, 0)
+  writeDeleteSet(deleteEncoder, createDeleteSetFromStructStore(doc.store))
+
+  const sm = getStatesToWrite(doc.store, targetStateVector);
+  const updateEncoders = Array.from(sm.entries()).sort((a, b) => b[0] - a[0]).map(([client, clock]) => {
+    const encoder = getEncoder();
+    // 1 client has structs to write
+    encoding.writeVarUint(encoder.restEncoder, 1)
+    // @ts-ignore
+    writeStructs(encoder, doc.store.clients.get(client), client, clock)
+
+    // no deletes to write
+    encoding.writeVarUint(encoder.restEncoder, 0)
+    return encoder
+  })
+
+  return [deleteEncoder, ...updateEncoders]
 }
 
 /**
