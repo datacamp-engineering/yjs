@@ -47,27 +47,52 @@ import * as map from 'lib0/map'
 import * as math from 'lib0/math'
 
 /**
+ * @param {Array<GC|Item>} structs All structs by `client`
+ * @param {number} minClock write structs starting with `ID(client,minClock)`
+ * @param {number | null} maxClock write structs with clock < maxClock `ID(client,clock)`
+ *
+ * @function
+ */
+const getStructsToWrite = (structs, minClock, maxClock = null) => {
+  minClock = math.max(minClock, structs[0].id.clock) // make sure the first id exists
+  const startNewStructs = findIndexSS(structs, minClock)
+  if (maxClock == null) {
+    return structs.slice(startNewStructs)
+  }
+  const lastStruct = structs[structs.length - 1]
+  maxClock = math.min(maxClock, lastStruct.id.clock)
+  let endNewStructs = findIndexSS(structs, maxClock)
+  if (startNewStructs === endNewStructs) {
+    endNewStructs += 1
+  }
+  return structs.slice(startNewStructs, endNewStructs)
+}
+
+/**
  * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
  * @param {Array<GC|Item>} structs All structs by `client`
  * @param {number} client
  * @param {number} clock write structs starting with `ID(client,clock)`
+ * @param {number | null} maxClock write structs with clock < maxClock `ID(client,clock)`
+ * @returns {number | null} the last clock written (or null if nothing)
  *
  * @function
  */
-const writeStructs = (encoder, structs, client, clock) => {
-  // write first id
+const writeStructs = (encoder, structs, client, clock, maxClock = null) => {
   clock = math.max(clock, structs[0].id.clock) // make sure the first id exists
-  const startNewStructs = findIndexSS(structs, clock)
+  const newStructs = getStructsToWrite(structs, clock, maxClock)
   // write # encoded structs
-  encoding.writeVarUint(encoder.restEncoder, structs.length - startNewStructs)
+  encoding.writeVarUint(encoder.restEncoder, newStructs.length)
   encoder.writeClient(client)
   encoding.writeVarUint(encoder.restEncoder, clock)
-  const firstStruct = structs[startNewStructs]
+  const firstStruct = newStructs[0]
   // write first struct with an offset
   firstStruct.write(encoder, clock - firstStruct.id.clock)
-  for (let i = startNewStructs + 1; i < structs.length; i++) {
-    structs[i].write(encoder, 0)
+  for (let i = 1; i < newStructs.length; i++) {
+    newStructs[i].write(encoder, 0)
   }
+  const lastStruct = newStructs[newStructs.length - 1]
+  return lastStruct == null ? null : lastStruct.id.clock + lastStruct.length
 }
 
 /**
