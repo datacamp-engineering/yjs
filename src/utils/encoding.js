@@ -556,6 +556,40 @@ export const encodeStateAsUpdateV2 = (doc, encodedTargetStateVector = new Uint8A
 export const encodeStateAsUpdate = (doc, encodedTargetStateVector) => encodeStateAsUpdateV2(doc, encodedTargetStateVector, new UpdateEncoderV1())
 
 /**
+ * Write all the document as a multiple update messages that can be applied on the remote document. If you specify the state of the remote client (`targetState`) it will
+ * only write the operations that are missing.
+ *
+ * Use `writeStateAsUpdate` instead if you are working with lib0/encoding.js#Encoder
+ *
+ * @param {Doc} doc
+ * @param {Uint8Array} [encodedTargetStateVector] The state of the target that receives the update. Leave empty to write all known structs
+ * @param {UpdateEncoderV1 | UpdateEncoderV2} [encoder]
+ * @return {Uint8Array[]}
+ *
+ * @function
+ */
+export const encodeStateAsUpdatesV2 = (doc, encodedTargetStateVector = new Uint8Array([0]), encoder = new UpdateEncoderV2()) => {
+  const targetStateVector = decodeStateVector(encodedTargetStateVector)
+  writeStateAsUpdate(encoder, doc, targetStateVector)
+  const updates = [encoder.toUint8Array()]
+  // also add the pending updates (if there are any)
+  if (doc.store.pendingDs) {
+    updates.push(doc.store.pendingDs)
+  }
+  if (doc.store.pendingStructs) {
+    updates.push(diffUpdateV2(doc.store.pendingStructs.update, encodedTargetStateVector))
+  }
+  if (updates.length > 1) {
+    if (encoder.constructor === UpdateEncoderV1) {
+      return [mergeUpdates(updates.map((update, i) => i === 0 ? update : convertUpdateFormatV2ToV1(update)))]
+    } else if (encoder.constructor === UpdateEncoderV2) {
+      return [mergeUpdatesV2(updates)]
+    }
+  }
+  return [updates[0]]
+}
+
+/**
  * Write all the document as multiple update messages that can be applied on the remote document. If you specify the state of the remote client (`targetState`) it will
  * only write the operations that are missing.
  *
@@ -567,7 +601,7 @@ export const encodeStateAsUpdate = (doc, encodedTargetStateVector) => encodeStat
  *
  * @function
  */
-export const encodeStateAsUpdates = (doc, encodedTargetStateVector) => [encodeStateAsUpdateV2(doc, encodedTargetStateVector, new UpdateEncoderV1())]
+export const encodeStateAsUpdates = (doc, encodedTargetStateVector) => encodeStateAsUpdatesV2(doc, encodedTargetStateVector, new UpdateEncoderV1())
 
 /**
  * Read state vector from Decoder and return as Map
