@@ -352,4 +352,43 @@ export const testEncodeStateAsUpdates = tc => {
   t.compare((4 + 1) + 1, updates.length)
 }
 
+/**
+ * @param {t.TestCase} tc
+ */
+export const testEncodeStateAsUpdatesWithMaps = tc => {
+  const yDoc = new Y.Doc()
+  const yMap = yDoc.getMap('myMap')
+  yMap.set('foo', 'foo1')
+  yMap.set('bar', 'bar1')
+  yMap.set('quux', 'quux1')
 
+  yMap.set('bar', 'bar2')
+
+  const expectedMap = {
+      foo: 'foo1',
+      bar: 'bar2',
+      quux: 'quux1'
+  }
+
+  const update = Y.encodeStateAsUpdate(yDoc);
+  const updates = Y.encodeStateAsUpdates(yDoc);
+  const mergedUpdate = Y.mergeUpdates(updates);
+
+  const yDocWithUpdate = new Y.Doc();
+  Y.applyUpdate(yDocWithUpdate, update);
+  t.compareObjects(yDocWithUpdate.getMap('myMap').toJSON(), expectedMap);
+
+  const yDocWithUpdates = new Y.Doc();
+  updates.forEach(() => {
+    Y.applyUpdate(yDocWithUpdates , mergedUpdate);
+  });
+  t.compareObjects(yDocWithUpdates.getMap('myMap').toJSON(), expectedMap);
+
+  const yDocWithMergedUpdate = new Y.Doc();
+  Y.applyUpdate(yDocWithMergedUpdate, mergedUpdate);
+  t.compareObjects(yDocWithMergedUpdate.getMap('myMap').toJSON(), expectedMap);
+
+  // 1 client did 4 updates
+  // 1 delete set
+  t.compare(4 + 1, updates.length)
+}
