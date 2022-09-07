@@ -556,6 +556,20 @@ export const encodeStateAsUpdateV2 = (doc, encodedTargetStateVector = new Uint8A
 export const encodeStateAsUpdate = (doc, encodedTargetStateVector) => encodeStateAsUpdateV2(doc, encodedTargetStateVector, new UpdateEncoderV1())
 
 /**
+ * Write all the document as multiple update messages that can be applied on the remote document. If you specify the state of the remote client (`targetState`) it will
+ * only write the operations that are missing.
+ *
+ * Use `writeStateAsUpdate` instead if you are working with lib0/encoding.js#Encoder
+ *
+ * @param {Doc} doc
+ * @param {Uint8Array} [encodedTargetStateVector] The state of the target that receives the update. Leave empty to write all known structs
+ * @return {Uint8Array[]}
+ *
+ * @function
+ */
+export const encodeStateAsUpdates = (doc, encodedTargetStateVector) => [encodeStateAsUpdateV2(doc, encodedTargetStateVector, new UpdateEncoderV1())]
+
+/**
  * Read state vector from Decoder and return as Map
  *
  * @param {DSDecoderV1 | DSDecoderV2} decoder

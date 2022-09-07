@@ -304,3 +304,43 @@ export const testMergePendingUpdates = tc => {
   const yText5 = yDoc5.getText('textBlock')
   t.compareStrings(yText5.toString(), 'nenor')
 }
+
+/**
+ * @param {t.TestCase} tc
+ */
+export const testEncodeStateAsUpdates = tc => {
+  const yDoc = new Y.Doc()
+  /**
+   * @type {Array<Uint8Array>}
+   */
+  const serverUpdates = []
+  yDoc.on('update', (update, origin, c) => {
+    serverUpdates.splice(serverUpdates.length, 0, update)
+  })
+  const yText = yDoc.getText('textBlock')
+  yText.applyDelta([{ insert: 'r' }])
+  yText.applyDelta([{ insert: 'o' }])
+  yText.applyDelta([{ insert: 'n' }])
+  yText.applyDelta([{ insert: 'e' }])
+  yText.applyDelta([{ insert: 'n' }])
+
+  const update = Y.encodeStateAsUpdate(yDoc);
+  const updates = Y.encodeStateAsUpdates(yDoc);
+  const mergedUpdate = Y.mergeUpdates(updates);
+
+  const yDocWithUpdate = new Y.Doc();
+  Y.applyUpdate(yDocWithUpdate, update);
+  t.compareStrings(yDocWithUpdate.getText('textBlock').toString(), 'nenor');
+
+  const yDocWithUpdates = new Y.Doc();
+  updates.forEach(() => {
+    Y.applyUpdate(yDocWithUpdates , mergedUpdate);
+  });
+  t.compareStrings(yDocWithUpdates.getText('textBlock').toString(), 'nenor');
+
+  const yDocWithMergedUpdate = new Y.Doc();
+  Y.applyUpdate(yDocWithMergedUpdate, mergedUpdate);
+  t.compareStrings(yDocWithMergedUpdate.getText('textBlock').toString(), 'nenor');
+}
+
+
