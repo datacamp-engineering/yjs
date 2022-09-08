@@ -330,7 +330,12 @@ export const testEncodeStateAsUpdates = tc => {
   Y.applyUpdate(yDoc, Y.encodeStateAsUpdate(remoteDoc))
 
   const update = Y.encodeStateAsUpdate(yDoc);
-  const updates = Y.encodeStateAsUpdates(yDoc, 1);
+  const updates = Y.encodeStateAsUpdates(yDoc, function * (/** @type number */ _client,  /** @type number */ clock , /** @type number */ maxClock) {
+    while (clock < maxClock) {
+      clock = Math.min(clock + 1, maxClock)
+      yield clock
+    }
+  });
   const mergedUpdate = Y.mergeUpdates(updates);
 
   const yDocWithUpdate = new Y.Doc();
@@ -371,7 +376,12 @@ export const testEncodeStateAsUpdatesWithMaps = tc => {
   }
 
   const update = Y.encodeStateAsUpdate(yDoc);
-  const updates = Y.encodeStateAsUpdates(yDoc, 2);
+  const updates = Y.encodeStateAsUpdates(yDoc, function * (/** @type number */ _client,  /** @type number */ clock , /** @type number */ maxClock) {
+    while (clock < maxClock) {
+      clock = Math.min(clock + 2, maxClock)
+      yield clock
+    }
+  });
   const mergedUpdate = Y.mergeUpdates(updates);
 
   const yDocWithUpdate = new Y.Doc();

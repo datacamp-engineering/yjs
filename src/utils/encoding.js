@@ -550,14 +550,13 @@ export const writeStateAsUpdate = (encoder, doc, targetStateVector = new Map()) 
  *
  * @param {() => UpdateEncoderV1 | UpdateEncoderV2} getEncoder
  * @param {Doc} doc
+ * @param {(client: number, clock: number, maxClock: number) => Iterable<number>} clockSplits
  * @param {Map<number,number>} [targetStateVector] The state of the target that receives the update. Leave empty to write all known structs
- * @param {number} [maxClockDifference]
  * @return {Array<UpdateEncoderV1 | UpdateEncoderV2>}
  *
  * @function
  */
-export const writeStateAsUpdates = (getEncoder, doc, targetStateVector = new Map(), maxClockDifference = 1) => {
-
+export const writeStateAsUpdates = (getEncoder, doc, clockSplits, targetStateVector = new Map()) => {
   const deleteEncoder = getEncoder();
   // no updates / structs to write
   encoding.writeVarUint(deleteEncoder.restEncoder, 0)
@@ -566,15 +565,30 @@ export const writeStateAsUpdates = (getEncoder, doc, targetStateVector = new Map
   const sm = getStatesToWrite(doc.store, targetStateVector);
   const updateEncoders = Array.from(sm.entries()).sort((a, b) => b[0] - a[0]).flatMap(([client, clock]) => {
     const lastClockClient = getState(doc.store, client)
+    /** @type {Array<GC | Item>} */
+    // @ts-ignore
+    const structs = doc.store.clients.get(client)
 
     /** @type Array<UpdateEncoderV1 | UpdateEncoderV2> */
     const clientEncoders = []
-    while(clock < lastClockClient) {
+    if (clockSplits) {
+      for (const maxClock of clockSplits(client, clock, lastClockClient)) {
+        const encoder = getEncoder();
+        // 1 client has structs to write
+        encoding.writeVarUint(encoder.restEncoder, 1)
+        clock = writeStructs(encoder, structs, client, clock, maxClock)
+
+        // no deletes to write
+        encoding.writeVarUint(encoder.restEncoder, 0)
+
+        clientEncoders.push(encoder)
+      }
+    }
+    if (clock < lastClockClient) {
       const encoder = getEncoder();
       // 1 client has structs to write
       encoding.writeVarUint(encoder.restEncoder, 1)
-      // @ts-ignore
-      clock = writeStructs(encoder, doc.store.clients.get(client), client, clock, clock + maxClockDifference)
+      clock = writeStructs(encoder, structs, client, clock)
 
       // no deletes to write
       encoding.writeVarUint(encoder.restEncoder, 0)
@@ -642,16 +656,16 @@ export const encodeStateAsUpdate = (doc, encodedTargetStateVector) => encodeStat
  * Use `writeStateAsUpdate` instead if you are working with lib0/encoding.js#Encoder
  *
  * @param {Doc} doc
- * @param {number} maxClockDifference
+ * @param {(client: number, clock: number, maxClock: number) => Iterable<number>} clockSplits
  * @param {Uint8Array} [encodedTargetStateVector] The state of the target that receives the update. Leave empty to write all known structs
  * @param {() => UpdateEncoderV1 | UpdateEncoderV2} [getEncoder]
  * @return {Uint8Array[]}
  *
  * @function
  */
-export const encodeStateAsUpdatesV2 = (doc, maxClockDifference, encodedTargetStateVector = new Uint8Array([0]), getEncoder = () => new UpdateEncoderV2()) => {
+export const encodeStateAsUpdatesV2 = (doc, clockSplits, encodedTargetStateVector = new Uint8Array([0]), getEncoder = () => new UpdateEncoderV2()) => {
   const targetStateVector = decodeStateVector(encodedTargetStateVector)
-  const encoders = writeStateAsUpdates(getEncoder, doc, targetStateVector, maxClockDifference)
+  const encoders = writeStateAsUpdates(getEncoder, doc, clockSplits, targetStateVector)
   const actualUpdates = encoders.map(encoder => encoder.toUint8Array())
   const updates = []
   // also add the pending updates (if there are any)
@@ -679,13 +693,13 @@ export const encodeStateAsUpdatesV2 = (doc, maxClockDifference, encodedTargetSta
  * Use `writeStateAsUpdate` instead if you are working with lib0/encoding.js#Encoder
  *
  * @param {Doc} doc
- * @param {number} maxClockDifference
+ * @param {(client: number, clock: number, maxClock: number) => Iterable<number>} clockSplits
  * @param {Uint8Array} [encodedTargetStateVector] The state of the target that receives the update. Leave empty to write all known structs
  * @return {Uint8Array[]}
  *
  * @function
  */
-export const encodeStateAsUpdates = (doc, maxClockDifference, encodedTargetStateVector) => encodeStateAsUpdatesV2(doc, maxClockDifference, encodedTargetStateVector, () => new UpdateEncoderV1())
+export const encodeStateAsUpdates = (doc, clockSplits, encodedTargetStateVector) => encodeStateAsUpdatesV2(doc, clockSplits, encodedTargetStateVector, () => new UpdateEncoderV1())
 
 /**
  * Read state vector from Decoder and return as Map
