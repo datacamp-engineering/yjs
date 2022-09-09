@@ -317,7 +317,7 @@ const splitClocksBy = (/** @type number */ x) => {
   return function * (_client, clock, maxClock) {
     while (clock < maxClock) {
       clock = Math.min(clock + x, maxClock)
-      yield clock
+      clock = yield clock
     }
   }
 }
@@ -462,4 +462,21 @@ export const testEncodeStateAsUpdatesWithNotebook = tc => {
   Y.applyUpdate(yDoc, updates.at(-1))
   t.compare(notebookYDocToJSON(splittedDoc), notebookYDocToJSON(yDoc), 'final')
   t.compare(notebookYDocToJSON(splittedDoc), parsed, 'final')
+}
+
+/**
+ * @param {t.TestCase} tc
+ */
+export const testEncodeStateAsUpdatesWithNotebookSplittedByChunks = tc => {
+  const contents = fs.readFileSync('/Users/jens/Downloads/notebook(1).ipynb').toString()
+  const parsed = JSON.parse(contents)
+  const yNotebook = new Y.Doc()
+
+  createYDocFromNotebookJSON(parsed, yNotebook)
+  const splitBy100 = Y.encodeStateAsUpdates(yNotebook, splitClocksBy(100))
+  const ydoc = new Y.Doc();
+  splitBy100.forEach(update => {
+    Y.applyUpdate(ydoc, update)
+  })
+  t.compare(notebookYDocToJSON(ydoc), parsed, 'splitted-updates')
 }
