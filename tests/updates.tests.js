@@ -1,9 +1,12 @@
+import fs from 'fs'
+
 import * as t from 'lib0/testing'
 import { init, compare } from './testHelper.js' // eslint-disable-line
 import * as Y from '../src/index.js'
 import { readClientsStructRefs, readDeleteSet, UpdateDecoderV2, UpdateEncoderV2, writeDeleteSet } from '../src/internals.js'
 import * as encoding from 'lib0/encoding'
 import * as decoding from 'lib0/decoding'
+import { createYDocFromNotebookJSON, notebookYDocToJSON } from './createNotebook.js'
 
 /**
  * @typedef {Object} Enc
@@ -418,4 +421,45 @@ export const testEncodeStateAsUpdatesWithMaps = tc => {
   Y.applyUpdate(partial, updates[3])
   t.compareObjects(partial.getMap('myMap').toJSON(), {foo: 'foo1', bar: 'bar2', quux: 'quux1'}, 'after update 4');
 
+}
+
+/**
+ * @param {t.TestCase} tc
+ */
+export const testEncodeStateAsUpdatesWithNotebook = tc => {
+  const contents = fs.readFileSync('/Users/jens/Downloads/notebook(1).ipynb').toString()
+  const parsed = JSON.parse(contents)
+  const yNotebook = new Y.Doc()
+
+  /** @type number[] */
+  const clocks = []
+  /** @type Array<Uint8Array> */
+  const updates = [
+    // start with encoding empty notebook because first splitted update is delete set
+    Y.encodeStateAsUpdate(yNotebook)
+  ]
+  createYDocFromNotebookJSON(parsed, yNotebook, () => {
+    clocks.push(Y.getState(yNotebook.store, yNotebook.clientID))
+    updates.push(Y.encodeStateAsUpdate(yNotebook))
+  })
+  updates.push(Y.encodeStateAsUpdate(yNotebook))
+
+  const splittedUpdates = Y.encodeStateAsUpdates(yNotebook, () => clocks)
+
+  t.compare(splittedUpdates.length, updates.length)
+
+  const splittedDoc = new Y.Doc();
+  splittedUpdates.forEach((update, index) => {
+    Y.applyUpdate(splittedDoc, update)
+
+    const yDoc = new Y.Doc()
+    Y.applyUpdate(yDoc, updates[index])
+    t.compare(notebookYDocToJSON(splittedDoc), notebookYDocToJSON(yDoc), 'partial ' + index)
+  })
+
+  const yDoc = new Y.Doc()
+  // @ts-ignore
+  Y.applyUpdate(yDoc, updates.at(-1))
+  t.compare(notebookYDocToJSON(splittedDoc), notebookYDocToJSON(yDoc), 'final')
+  t.compare(notebookYDocToJSON(splittedDoc), parsed, 'final')
 }
