@@ -545,25 +545,38 @@ export const writeStateAsUpdate = (encoder, doc, targetStateVector = new Map()) 
 }
 
 /**
+  * @param {Array<[number, number]>} clientClocks
+  * @return {Array<[number, number]>}
+  *
+  * @function
+  */
+const sortClientsLargestToSmallest = (clientClocks) => {
+  return clientClocks.sort((a, z) => z[0] - a[0])
+}
+
+/**
  * Write all the document a combination of update messages. If you specify the state of the remote client (`targetStateVector`) it will
  * only write the operations that are missing.
  *
  * @param {() => UpdateEncoderV1 | UpdateEncoderV2} getEncoder
  * @param {Doc} doc
  * @param {(client: number, clock: number, maxClock: number) => Iterable<number> | Generator<number, void, number>} clockSplits
+ * @param {(clientClocks: Array<[number, number]>) => Array<[number, any]>} [sortClients]
  * @param {Map<number,number>} [targetStateVector] The state of the target that receives the update. Leave empty to write all known structs
  * @return {Array<UpdateEncoderV1 | UpdateEncoderV2>}
  *
  * @function
  */
-export const writeStateAsUpdates = (getEncoder, doc, clockSplits, targetStateVector = new Map()) => {
+export const writeStateAsUpdates = (getEncoder, doc, clockSplits, sortClients = sortClientsLargestToSmallest, targetStateVector = new Map()) => {
   const deleteEncoder = getEncoder();
   // no updates / structs to write
   encoding.writeVarUint(deleteEncoder.restEncoder, 0)
   writeDeleteSet(deleteEncoder, createDeleteSetFromStructStore(doc.store))
 
   const sm = getStatesToWrite(doc.store, targetStateVector);
-  const updateEncoders = Array.from(sm.entries()).sort((a, b) => b[0] - a[0]).flatMap(([client, clock]) => {
+  // Write items with higher client ids first
+  // This heavily improves the conflict algorithm.
+  const updateEncoders = sortClients(Array.from(sm.entries())).flatMap(([client, clock]) => {
     const lastClockClient = getState(doc.store, client)
     /** @type {Array<GC | Item>} */
     // @ts-ignore
@@ -663,15 +676,16 @@ export const encodeStateAsUpdate = (doc, encodedTargetStateVector) => encodeStat
  *
  * @param {Doc} doc
  * @param {(client: number, clock: number, maxClock: number) => Iterable<number> | Generator<number, void, number>} clockSplits
+ * @param {(clientClocks: Array<[number, number]>) => Array<[number, any]>} [sortClients]
  * @param {Uint8Array} [encodedTargetStateVector] The state of the target that receives the update. Leave empty to write all known structs
  * @param {() => UpdateEncoderV1 | UpdateEncoderV2} [getEncoder]
  * @return {Uint8Array[]}
  *
  * @function
  */
-export const encodeStateAsUpdatesV2 = (doc, clockSplits, encodedTargetStateVector = new Uint8Array([0]), getEncoder = () => new UpdateEncoderV2()) => {
+export const encodeStateAsUpdatesV2 = (doc, clockSplits, sortClients, encodedTargetStateVector = new Uint8Array([0]), getEncoder = () => new UpdateEncoderV2()) => {
   const targetStateVector = decodeStateVector(encodedTargetStateVector)
-  const encoders = writeStateAsUpdates(getEncoder, doc, clockSplits, targetStateVector)
+  const encoders = writeStateAsUpdates(getEncoder, doc, clockSplits, sortClients, targetStateVector)
   const actualUpdates = encoders.map(encoder => encoder.toUint8Array())
   const updates = []
   // also add the pending updates (if there are any)
@@ -700,12 +714,13 @@ export const encodeStateAsUpdatesV2 = (doc, clockSplits, encodedTargetStateVecto
  *
  * @param {Doc} doc
  * @param {(client: number, clock: number, maxClock: number) => Iterable<number> | Generator<number, void, number>} clockSplits
+ * @param {(clientClocks: Array<[number, number]>) => Array<[number, any]>} [sortClients]
  * @param {Uint8Array} [encodedTargetStateVector] The state of the target that receives the update. Leave empty to write all known structs
  * @return {Uint8Array[]}
  *
  * @function
  */
-export const encodeStateAsUpdates = (doc, clockSplits, encodedTargetStateVector) => encodeStateAsUpdatesV2(doc, clockSplits, encodedTargetStateVector, () => new UpdateEncoderV1())
+export const encodeStateAsUpdates = (doc, clockSplits, sortClients, encodedTargetStateVector) => encodeStateAsUpdatesV2(doc, clockSplits, sortClients, encodedTargetStateVector, () => new UpdateEncoderV1())
 
 /**
  * Read state vector from Decoder and return as Map

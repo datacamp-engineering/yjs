@@ -480,3 +480,37 @@ export const testEncodeStateAsUpdatesWithNotebookSplittedByChunks = tc => {
   })
   t.compare(notebookYDocToJSON(ydoc), parsed, 'splitted-updates')
 }
+
+/**
+ * @param {t.TestCase} tc
+ */
+export const testEncodeStateAsUpdatesWithDifferentSorting = tc => {
+  const yDoc = new Y.Doc()
+  yDoc.clientID = 1
+
+  const cell1 = new Y.Map()
+  cell1.set('id', 'one')
+  yDoc.getArray('cells').push([cell1])
+
+  const remoteYDoc = new Y.Doc()
+  yDoc.clientID = 2
+  Y.applyUpdate(remoteYDoc, Y.encodeStateAsUpdate(yDoc))
+  const cell2 = new Y.Map()
+  cell2.set('id', 'two')
+  remoteYDoc.getArray('cells').push([cell2])
+
+  Y.applyUpdate(yDoc, Y.encodeStateAsUpdate(remoteYDoc))
+
+  /**
+    * @param {Array<[number, number]>} clientClocks
+    * @return {Array<[number, number]>}
+    *
+    * @function
+    */
+  const sortSmallToLarge = (clientClocks) => {
+    return clientClocks.sort((a, z) => a[0] - z[0])
+  }
+  t.compare(Y.encodeStateAsUpdates(yDoc, () => []), Y.encodeStateAsUpdates(yDoc, () => []), 'default sort')
+  t.compare(Y.encodeStateAsUpdates(yDoc, () => [], sortSmallToLarge), Y.encodeStateAsUpdates(yDoc, () => [], sortSmallToLarge), 'manual sort')
+  // we cannot compare that default sort is not equal to manual sort in lib0/testing framework...
+}
