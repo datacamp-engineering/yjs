@@ -1,6 +1,6 @@
 {
   "name": "@datacamp/yjs",
-  "version": "13.5.41-alpha.1",
+  "version": "13.5.41-alpha.2",
   "description": "Shared Editing Library",
   "main": "./dist/yjs.cjs",
   "module": "./dist/yjs.mjs",
