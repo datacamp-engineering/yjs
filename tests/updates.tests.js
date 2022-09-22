@@ -347,7 +347,7 @@ export const testEncodeStateAsUpdates = tc => {
   Y.applyUpdate(yDoc, Y.encodeStateAsUpdate(remoteDoc))
 
   const update = Y.encodeStateAsUpdate(yDoc);
-  const updates = Y.encodeStateAsUpdates(yDoc, splitClocksBy(1));
+  const updates = Array.from(Y.encodeStateAsUpdates(yDoc, splitClocksBy(1)));
   const mergedUpdate = Y.mergeUpdates(updates);
 
   const yDocWithUpdate = new Y.Doc();
@@ -388,7 +388,7 @@ export const testEncodeStateAsUpdatesWithMaps = tc => {
   }
 
   const update = Y.encodeStateAsUpdate(yDoc);
-  const updates = Y.encodeStateAsUpdates(yDoc, splitClocksBy(2));
+  const updates = Array.from(Y.encodeStateAsUpdates(yDoc, splitClocksBy(2)));
   const mergedUpdate = Y.mergeUpdates(updates);
 
   const yDocWithUpdate = new Y.Doc();
@@ -444,7 +444,7 @@ export const testEncodeStateAsUpdatesWithNotebook = tc => {
   })
   updates.push(Y.encodeStateAsUpdate(yNotebook))
 
-  const splittedUpdates = Y.encodeStateAsUpdates(yNotebook, () => clocks)
+  const splittedUpdates = Array.from(Y.encodeStateAsUpdates(yNotebook, () => clocks))
 
   t.compare(splittedUpdates.length, updates.length)
 
@@ -473,11 +473,27 @@ export const testEncodeStateAsUpdatesWithNotebookSplittedByChunks = tc => {
   const yNotebook = new Y.Doc()
 
   createYDocFromNotebookJSON(parsed, yNotebook)
-  const splitBy100 = Y.encodeStateAsUpdates(yNotebook, splitClocksBy(100))
+  const splitBy100 = Array.from(Y.encodeStateAsUpdates(yNotebook, splitClocksBy(100)))
   const ydoc = new Y.Doc();
   splitBy100.forEach(update => {
     Y.applyUpdate(ydoc, update)
   })
+  t.compare(notebookYDocToJSON(ydoc), parsed, 'splitted-updates')
+}
+
+/**
+ * @param {t.TestCase} tc
+ */
+export const testEncodeStateAsUpdatesWithNotebookSplittedByChunksUsingGenerator = tc => {
+  const contents = fs.readFileSync('/Users/jens/Downloads/notebook(1).ipynb').toString()
+  const parsed = JSON.parse(contents)
+  const yNotebook = new Y.Doc()
+
+  createYDocFromNotebookJSON(parsed, yNotebook)
+  const ydoc = new Y.Doc();
+  for (const update of Y.encodeStateAsUpdates(yNotebook, splitClocksBy(100))) {
+    Y.applyUpdate(ydoc, update)
+  }
   t.compare(notebookYDocToJSON(ydoc), parsed, 'splitted-updates')
 }
 
@@ -510,8 +526,8 @@ export const testEncodeStateAsUpdatesWithDifferentSorting = tc => {
   const sortSmallToLarge = (clientClocks) => {
     return clientClocks.sort((a, z) => a[0] - z[0])
   }
-  t.compare(Y.encodeStateAsUpdates(yDoc, () => []), Y.encodeStateAsUpdates(yDoc, () => []), 'default sort')
-  t.compare(Y.encodeStateAsUpdates(yDoc, () => [], sortSmallToLarge), Y.encodeStateAsUpdates(yDoc, () => [], sortSmallToLarge), 'manual sort')
+  t.compare(Array.from(Y.encodeStateAsUpdates(yDoc, () => [])), Array.from(Y.encodeStateAsUpdates(yDoc, () => [])), 'default sort')
+  t.compare(Array.from(Y.encodeStateAsUpdates(yDoc, () => [], sortSmallToLarge)), Array.from(Y.encodeStateAsUpdates(yDoc, () => [], sortSmallToLarge)), 'manual sort')
   // we cannot compare that default sort is not equal to manual sort in lib0/testing framework...
 }
 
@@ -537,7 +553,7 @@ export const testEncodeStateAsUpdatesWithDifferentSortingAndEditsByClients = tc 
 
   Y.applyUpdate(yNotebook, Y.encodeStateAsUpdate(clientDoc))
 
-  const updates = Y.encodeStateAsUpdates(yNotebook, (client) => {
+  const updates = Array.from(Y.encodeStateAsUpdates(yNotebook, (client) => {
     if (client === yNotebook.clientID) {
       return clocks
     }
@@ -559,7 +575,7 @@ export const testEncodeStateAsUpdatesWithDifferentSortingAndEditsByClients = tc 
       return sorted;
     }
     return [...sorted, currentlyLoadedYDocClientClock];
-  })
+  }));
 
   const ydoc = new Y.Doc();
   Y.applyUpdate(ydoc, updates[0]) // delete set

@@ -563,27 +563,26 @@ const sortClientsLargestToSmallest = (clientClocks) => {
  * @param {(client: number, clock: number, maxClock: number) => Iterable<number> | Generator<number, void, number>} clockSplits
  * @param {(clientClocks: Array<[number, number]>) => Array<[number, any]>} [sortClients]
  * @param {Map<number,number>} [targetStateVector] The state of the target that receives the update. Leave empty to write all known structs
- * @return {Array<UpdateEncoderV1 | UpdateEncoderV2>}
+ * @return {Iterable<UpdateEncoderV1 | UpdateEncoderV2>}
  *
- * @function
+ * @generator
  */
-export const writeStateAsUpdates = (getEncoder, doc, clockSplits, sortClients = sortClientsLargestToSmallest, targetStateVector = new Map()) => {
+export const writeStateAsUpdates = function * (getEncoder, doc, clockSplits, sortClients = sortClientsLargestToSmallest, targetStateVector = new Map()) {
   const deleteEncoder = getEncoder();
   // no updates / structs to write
   encoding.writeVarUint(deleteEncoder.restEncoder, 0)
   writeDeleteSet(deleteEncoder, createDeleteSetFromStructStore(doc.store))
+  yield deleteEncoder
 
   const sm = getStatesToWrite(doc.store, targetStateVector);
   // Write items with higher client ids first
   // This heavily improves the conflict algorithm.
-  const updateEncoders = sortClients(Array.from(sm.entries())).flatMap(([client, clock]) => {
+  for (let [client, clock] of sortClients(Array.from(sm.entries()))) {
     const lastClockClient = getState(doc.store, client)
     /** @type {Array<GC | Item>} */
     // @ts-ignore
     const structs = doc.store.clients.get(client)
 
-    /** @type Array<UpdateEncoderV1 | UpdateEncoderV2> */
-    const clientEncoders = []
     if (clockSplits != null) {
       const iterator = clockSplits(client, clock, lastClockClient)[Symbol.iterator]()
       while(true) {
@@ -600,7 +599,7 @@ export const writeStateAsUpdates = (getEncoder, doc, clockSplits, sortClients = 
         // no deletes to write
         encoding.writeVarUint(encoder.restEncoder, 0)
 
-        clientEncoders.push(encoder)
+        yield encoder
       }
     }
     if (clock < lastClockClient) {
@@ -612,12 +611,9 @@ export const writeStateAsUpdates = (getEncoder, doc, clockSplits, sortClients = 
       // no deletes to write
       encoding.writeVarUint(encoder.restEncoder, 0)
 
-      clientEncoders.push(encoder)
+      yield encoder
     }
-    return clientEncoders
-  })
-
-  return [deleteEncoder, ...updateEncoders]
+  }
 }
 
 /**
@@ -679,14 +675,15 @@ export const encodeStateAsUpdate = (doc, encodedTargetStateVector) => encodeStat
  * @param {(clientClocks: Array<[number, number]>) => Array<[number, any]>} [sortClients]
  * @param {Uint8Array} [encodedTargetStateVector] The state of the target that receives the update. Leave empty to write all known structs
  * @param {() => UpdateEncoderV1 | UpdateEncoderV2} [getEncoder]
- * @return {Uint8Array[]}
+ * @return {Iterable<Uint8Array>}
  *
- * @function
+ * @generator
  */
-export const encodeStateAsUpdatesV2 = (doc, clockSplits, sortClients, encodedTargetStateVector = new Uint8Array([0]), getEncoder = () => new UpdateEncoderV2()) => {
+export const encodeStateAsUpdatesV2 = function * (doc, clockSplits, sortClients, encodedTargetStateVector = new Uint8Array([0]), getEncoder = () => new UpdateEncoderV2()) {
   const targetStateVector = decodeStateVector(encodedTargetStateVector)
-  const encoders = writeStateAsUpdates(getEncoder, doc, clockSplits, sortClients, targetStateVector)
-  const actualUpdates = encoders.map(encoder => encoder.toUint8Array())
+  for (const encoder of writeStateAsUpdates(getEncoder, doc, clockSplits, sortClients, targetStateVector)) {
+    yield encoder.toUint8Array();
+  }
   const updates = []
   // also add the pending updates (if there are any)
   if (doc.store.pendingDs) {
@@ -698,12 +695,11 @@ export const encodeStateAsUpdatesV2 = (doc, clockSplits, sortClients, encodedTar
   if (updates.length > 0) {
     const encoder = getEncoder()
     if (encoder.constructor === UpdateEncoderV1) {
-      return [...actualUpdates, mergeUpdates(updates.map((update, i) => i === 0 ? update : convertUpdateFormatV2ToV1(update)))]
+      yield mergeUpdates(updates.map((update, i) => i === 0 ? update : convertUpdateFormatV2ToV1(update)))
     } else if (encoder.constructor === UpdateEncoderV2) {
-      return [...actualUpdates, mergeUpdatesV2(updates)]
+      yield mergeUpdatesV2(updates)
     }
   }
-  return actualUpdates
 }
 
 /**
@@ -716,7 +712,7 @@ export const encodeStateAsUpdatesV2 = (doc, clockSplits, sortClients, encodedTar
  * @param {(client: number, clock: number, maxClock: number) => Iterable<number> | Generator<number, void, number>} clockSplits
  * @param {(clientClocks: Array<[number, number]>) => Array<[number, any]>} [sortClients]
  * @param {Uint8Array} [encodedTargetStateVector] The state of the target that receives the update. Leave empty to write all known structs
- * @return {Uint8Array[]}
+ * @return {Iterable<Uint8Array>}
  *
  * @function
  */
