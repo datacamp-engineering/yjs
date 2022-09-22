@@ -514,3 +514,61 @@ export const testEncodeStateAsUpdatesWithDifferentSorting = tc => {
   t.compare(Y.encodeStateAsUpdates(yDoc, () => [], sortSmallToLarge), Y.encodeStateAsUpdates(yDoc, () => [], sortSmallToLarge), 'manual sort')
   // we cannot compare that default sort is not equal to manual sort in lib0/testing framework...
 }
+
+/**
+ * @param {t.TestCase} tc
+ */
+export const testEncodeStateAsUpdatesWithDifferentSortingAndEditsByClients = tc => {
+  const contents = fs.readFileSync('/Users/jens/Downloads/notebook(1).ipynb').toString()
+  const parsed = JSON.parse(contents)
+  const yNotebook = new Y.Doc()
+
+  /** @type number[] */
+  const clocks = []
+  createYDocFromNotebookJSON(parsed, yNotebook, () => {
+    clocks.push(Y.getState(yNotebook.store, yNotebook.clientID))
+  })
+
+  const clientDoc = new Y.Doc()
+  Y.applyUpdate(clientDoc, Y.encodeStateAsUpdate(yNotebook))
+  const source = clientDoc.getArray('cells').get(0).get('source')
+  source.insert(source.length, "\nimport random")
+  t.compare(source.toString(), "import yellowbrick\nimport random", "clientDoc should have right code")
+
+  Y.applyUpdate(yNotebook, Y.encodeStateAsUpdate(clientDoc))
+
+  const updates = Y.encodeStateAsUpdates(yNotebook, (client) => {
+    if (client === yNotebook.clientID) {
+      return clocks
+    }
+    return []
+  }, clientClocks => {
+    const currentlyLoadedYDocClientClock = clientClocks.find(
+      (clientClock) =>
+        clientClock[0] === yNotebook.clientID,
+    );
+    const sorted = clientClocks
+      .filter(
+        (clientClock) =>
+          clientClock[0] !== yNotebook.clientID,
+      )
+      .sort((a, z) => {
+        return z[0] - a[0];
+      });
+    if (currentlyLoadedYDocClientClock == null) {
+      return sorted;
+    }
+    return [...sorted, currentlyLoadedYDocClientClock];
+  })
+
+  const ydoc = new Y.Doc();
+  Y.applyUpdate(ydoc, updates[0]) // delete set
+  Y.applyUpdate(ydoc, updates[1]) // clientDoc updates
+  Y.applyUpdate(ydoc, updates[2]) // cell 0 initialized
+  t.compare(ydoc.getArray('cells').get(0).get('source').toString(), "import yellowbrick\nimport random", 'after cell is added by yNotebook')
+
+  updates.forEach(update => {
+    Y.applyUpdate(ydoc, update)
+  })
+  t.compare(ydoc.getArray('cells').get(0).get('source').toString(), "import yellowbrick\nimport random")
+}
