@@ -1,4 +1,3 @@
-
 /**
  * @module YText
  */
@@ -118,14 +117,15 @@ const findNextPosition = (transaction, pos, count) => {
  * @param {Transaction} transaction
  * @param {AbstractType<any>} parent
  * @param {number} index
+ * @param {boolean} useSearchMarker
  * @return {ItemTextListPosition}
  *
  * @private
  * @function
  */
-const findPosition = (transaction, parent, index) => {
+const findPosition = (transaction, parent, index, useSearchMarker) => {
   const currentAttributes = new Map()
-  const marker = findMarker(parent, index)
+  const marker = useSearchMarker ? findMarker(parent, index) : null
   if (marker) {
     const pos = new ItemTextListPosition(marker.p.left, marker.p, marker.index, currentAttributes)
     return findNextPosition(transaction, pos, index - marker.index)
@@ -201,7 +201,7 @@ const minimizeAttributeChanges = (currPos, attributes) => {
   while (true) {
     if (currPos.right === null) {
       break
-    } else if (currPos.right.deleted || (currPos.right.content.constructor === ContentFormat && equalAttrs(attributes[(/** @type {ContentFormat} */ (currPos.right.content)).key] || null, /** @type {ContentFormat} */ (currPos.right.content).value))) {
+    } else if (currPos.right.deleted || (currPos.right.content.constructor === ContentFormat && equalAttrs(attributes[(/** @type {ContentFormat} */ (currPos.right.content)).key] ?? null, /** @type {ContentFormat} */ (currPos.right.content).value))) {
       //
     } else {
       break
@@ -227,7 +227,7 @@ const insertAttributes = (transaction, parent, currPos, attributes) => {
   // insert format-start items
   for (const key in attributes) {
     const val = attributes[key]
-    const currentVal = currPos.currentAttributes.get(key) || null
+    const currentVal = currPos.currentAttributes.get(key) ?? null
     if (!equalAttrs(currentVal, val)) {
       // save negated attribute (set null if currentVal undefined)
       negatedAttributes.set(key, currentVal)
@@ -251,7 +251,7 @@ const insertAttributes = (transaction, parent, currPos, attributes) => {
  * @function
  **/
 const insertText = (transaction, parent, currPos, text, attributes) => {
-  currPos.currentAttributes.forEach((val, key) => {
+  currPos.currentAttributes.forEach((_val, key) => {
     if (attributes[key] === undefined) {
       attributes[key] = null
     }
@@ -363,32 +363,47 @@ const formatText = (transaction, parent, currPos, length, attributes) => {
  * @function
  */
 const cleanupFormattingGap = (transaction, start, curr, startAttributes, currAttributes) => {
-  let end = curr
-  const endAttributes = map.copy(currAttributes)
+  /**
+   * @type {Item|null}
+   */
+  let end = start
+  /**
+   * @type {Map<string,ContentFormat>}
+   */
+  const endFormats = map.create()
   while (end && (!end.countable || end.deleted)) {
     if (!end.deleted && end.content.constructor === ContentFormat) {
-      updateCurrentAttributes(endAttributes, /** @type {ContentFormat} */ (end.content))
+      const cf = /** @type {ContentFormat} */ (end.content)
+      endFormats.set(cf.key, cf)
     }
     end = end.right
   }
   let cleanups = 0
-  let reachedEndOfCurr = false
+  let reachedCurr = false
   while (start !== end) {
     if (curr === start) {
-      reachedEndOfCurr = true
+      reachedCurr = true
     }
     if (!start.deleted) {
       const content = start.content
       switch (content.constructor) {
         case ContentFormat: {
           const { key, value } = /** @type {ContentFormat} */ (content)
-          if ((endAttributes.get(key) || null) !== value || (startAttributes.get(key) || null) === value) {
+          const startAttrValue = startAttributes.get(key) ?? null
+          if (endFormats.get(key) !== content || startAttrValue === value) {
             // Either this format is overwritten or it is not necessary because the attribute already existed.
             start.delete(transaction)
             cleanups++
-            if (!reachedEndOfCurr && (currAttributes.get(key) || null) === value && (startAttributes.get(key) || null) !== value) {
-              currAttributes.delete(key)
+            if (!reachedCurr && (currAttributes.get(key) ?? null) === value && startAttrValue !== value) {
+              if (startAttrValue === null) {
+                currAttributes.delete(key)
+              } else {
+                currAttributes.set(key, startAttrValue)
+              }
             }
+          }
+          if (!reachedCurr && !start.deleted) {
+            updateCurrentAttributes(currAttributes, /** @type {ContentFormat} */ (content))
           }
           break
         }
@@ -459,6 +474,56 @@ export const cleanupYTextFormatting = type => {
     }
   })
   return res
+}
+
+/**
+ * This will be called by the transction once the event handlers are called to potentially cleanup
+ * formatting attributes.
+ *
+ * @param {Transaction} transaction
+ */
+export const cleanupYTextAfterTransaction = transaction => {
+  /**
+   * @type {Set<YText>}
+   */
+  const needFullCleanup = new Set()
+  // check if another formatting item was inserted
+  const doc = transaction.doc
+  for (const [client, afterClock] of transaction.afterState.entries()) {
+    const clock = transaction.beforeState.get(client) || 0
+    if (afterClock === clock) {
+      continue
+    }
+    iterateStructs(transaction, /** @type {Array<Item|GC>} */ (doc.store.clients.get(client)), clock, afterClock, item => {
+      if (
+        !item.deleted && /** @type {Item} */ (item).content.constructor === ContentFormat && item.constructor !== GC
+      ) {
+        needFullCleanup.add(/** @type {any} */ (item).parent)
+      }
+    })
+  }
+  // cleanup in a new transaction
+  transact(doc, (t) => {
+    iterateDeletedStructs(transaction, transaction.deleteSet, item => {
+      if (item instanceof GC || !(/** @type {YText} */ (item.parent)._hasFormatting) || needFullCleanup.has(/** @type {YText} */ (item.parent))) {
+        return
+      }
+      const parent = /** @type {YText} */ (item.parent)
+      if (item.content.constructor === ContentFormat) {
+        needFullCleanup.add(parent)
+      } else {
+        // If no formatting attribute was inserted or deleted, we can make due with contextless
+        // formatting cleanups.
+        // Contextless: it is not necessary to compute currentAttributes for the affected position.
+        cleanupContextlessFormattingGap(t, item)
+      }
+    })
+    // If a formatting item was inserted, we simply clean the whole type.
+    // We need to compute currentAttributes for the current position anyway.
+    for (const yText of needFullCleanup) {
+      cleanupYTextFormatting(yText)
+    }
+  })
 }
 
 /**
@@ -616,36 +681,39 @@ export class YTextEvent extends YEvent {
             /**
              * @type {any}
              */
-            let op
+            let op = null
             switch (action) {
               case 'delete':
-                op = { delete: deleteLen }
+                if (deleteLen > 0) {
+                  op = { delete: deleteLen }
+                }
                 deleteLen = 0
                 break
               case 'insert':
-                op = { insert }
-                if (currentAttributes.size > 0) {
-                  op.attributes = {}
-                  currentAttributes.forEach((value, key) => {
-                    if (value !== null) {
-                      op.attributes[key] = value
-                    }
-                  })
+                if (typeof insert === 'object' || insert.length > 0) {
+                  op = { insert }
+                  if (currentAttributes.size > 0) {
+                    op.attributes = {}
+                    currentAttributes.forEach((value, key) => {
+                      if (value !== null) {
+                        op.attributes[key] = value
+                      }
+                    })
+                  }
                 }
                 insert = ''
                 break
               case 'retain':
-                op = { retain }
-                if (Object.keys(attributes).length > 0) {
-                  op.attributes = {}
-                  for (const key in attributes) {
-                    op.attributes[key] = attributes[key]
+                if (retain > 0) {
+                  op = { retain }
+                  if (!object.isEmpty(attributes)) {
+                    op.attributes = object.assign({}, attributes)
                   }
                 }
                 retain = 0
                 break
             }
-            delta.push(op)
+            if (op) delta.push(op)
             action = null
           }
         }
@@ -701,12 +769,12 @@ export class YTextEvent extends YEvent {
               const { key, value } = /** @type {ContentFormat} */ (item.content)
               if (this.adds(item)) {
                 if (!this.deletes(item)) {
-                  const curVal = currentAttributes.get(key) || null
+                  const curVal = currentAttributes.get(key) ?? null
                   if (!equalAttrs(curVal, value)) {
                     if (action === 'retain') {
                       addOp()
                     }
-                    if (equalAttrs(value, (oldAttributes.get(key) || null))) {
+                    if (equalAttrs(value, (oldAttributes.get(key) ?? null))) {
                       delete attributes[key]
                     } else {
                       attributes[key] = value
@@ -717,7 +785,7 @@ export class YTextEvent extends YEvent {
                 }
               } else if (this.deletes(item)) {
                 oldAttributes.set(key, value)
-                const curVal = currentAttributes.get(key) || null
+                const curVal = currentAttributes.get(key) ?? null
                 if (!equalAttrs(curVal, value)) {
                   if (action === 'retain') {
                     addOp()
@@ -791,9 +859,14 @@ export class YText extends AbstractType {
      */
     this._pending = string !== undefined ? [() => this.insert(0, string)] : []
     /**
-     * @type {Array<ArraySearchMarker>}
+     * @type {Array<ArraySearchMarker>|null}
      */
     this._searchMarker = []
+    /**
+     * Whether this YText contains formatting attributes.
+     * This flag is updated when a formatting item is integrated (see ContentFormat.integrate)
+     */
+    this._hasFormatting = false
   }
 
   /**
@@ -824,6 +897,10 @@ export class YText extends AbstractType {
   }
 
   /**
+   * Makes a copy of this data type that can be included somewhere else.
+   *
+   * Note that the content is only readable _after_ it has been included somewhere in the Ydoc.
+   *
    * @return {YText}
    */
   clone () {
@@ -841,55 +918,10 @@ export class YText extends AbstractType {
   _callObserver (transaction, parentSubs) {
     super._callObserver(transaction, parentSubs)
     const event = new YTextEvent(this, transaction, parentSubs)
-    const doc = transaction.doc
     callTypeObservers(this, transaction, event)
     // If a remote change happened, we try to cleanup potential formatting duplicates.
-    if (!transaction.local) {
-      // check if another formatting item was inserted
-      let foundFormattingItem = false
-      for (const [client, afterClock] of transaction.afterState.entries()) {
-        const clock = transaction.beforeState.get(client) || 0
-        if (afterClock === clock) {
-          continue
-        }
-        iterateStructs(transaction, /** @type {Array<Item|GC>} */ (doc.store.clients.get(client)), clock, afterClock, item => {
-          if (!item.deleted && /** @type {Item} */ (item).content.constructor === ContentFormat) {
-            foundFormattingItem = true
-          }
-        })
-        if (foundFormattingItem) {
-          break
-        }
-      }
-      if (!foundFormattingItem) {
-        iterateDeletedStructs(transaction, transaction.deleteSet, item => {
-          if (item instanceof GC || foundFormattingItem) {
-            return
-          }
-          if (item.parent === this && item.content.constructor === ContentFormat) {
-            foundFormattingItem = true
-          }
-        })
-      }
-      transact(doc, (t) => {
-        if (foundFormattingItem) {
-          // If a formatting item was inserted, we simply clean the whole type.
-          // We need to compute currentAttributes for the current position anyway.
-          cleanupYTextFormatting(this)
-        } else {
-          // If no formatting attribute was inserted, we can make due with contextless
-          // formatting cleanups.
-          // Contextless: it is not necessary to compute currentAttributes for the affected position.
-          iterateDeletedStructs(t, t.deleteSet, item => {
-            if (item instanceof GC) {
-              return
-            }
-            if (item.parent === this) {
-              cleanupContextlessFormattingGap(t, item)
-            }
-          })
-        }
-      })
+    if (!transaction.local && this._hasFormatting) {
+      transaction._needFormattingCleanup = true
     }
   }
 
@@ -927,7 +959,7 @@ export class YText extends AbstractType {
    * Apply a {@link Delta} on this shared YText type.
    *
    * @param {any} delta The changes to apply on this element.
-   * @param {object}  [opts]
+   * @param {object}  opts
    * @param {boolean} [opts.sanitize] Sanitize input delta. Removes ending newlines if set to true.
    *
    *
@@ -1003,15 +1035,7 @@ export class YText extends AbstractType {
         str = ''
       }
     }
-    // snapshots are merged again after the transaction, so we need to keep the
-    // transalive until we are done
-    transact(doc, transaction => {
-      if (snapshot) {
-        splitSnapshotAffectedStructs(transaction, snapshot)
-      }
-      if (prevSnapshot) {
-        splitSnapshotAffectedStructs(transaction, prevSnapshot)
-      }
+    const computeDelta = () => {
       while (n !== null) {
         if (isVisible(n, snapshot) || (prevSnapshot !== undefined && isVisible(n, prevSnapshot))) {
           switch (n.content.constructor) {
@@ -1064,7 +1088,22 @@ export class YText extends AbstractType {
         n = n.right
       }
       packStr()
-    }, splitSnapshotAffectedStructs)
+    }
+    if (snapshot || prevSnapshot) {
+      // snapshots are merged again after the transaction, so we need to keep the
+      // transaction alive until we are done
+      transact(doc, transaction => {
+        if (snapshot) {
+          splitSnapshotAffectedStructs(transaction, snapshot)
+        }
+        if (prevSnapshot) {
+          splitSnapshotAffectedStructs(transaction, prevSnapshot)
+        }
+        computeDelta()
+      }, 'cleanup')
+    } else {
+      computeDelta()
+    }
     return ops
   }
 
@@ -1085,7 +1124,7 @@ export class YText extends AbstractType {
     const y = this.doc
     if (y !== null) {
       transact(y, transaction => {
-        const pos = findPosition(transaction, this, index)
+        const pos = findPosition(transaction, this, index, !attributes)
         if (!attributes) {
           attributes = {}
           // @ts-ignore
@@ -1103,20 +1142,20 @@ export class YText extends AbstractType {
    *
    * @param {number} index The index to insert the embed at.
    * @param {Object | AbstractType<any>} embed The Object that represents the embed.
-   * @param {TextAttributes} attributes Attribute information to apply on the
+   * @param {TextAttributes} [attributes] Attribute information to apply on the
    *                                    embed
    *
    * @public
    */
-  insertEmbed (index, embed, attributes = {}) {
+  insertEmbed (index, embed, attributes) {
     const y = this.doc
     if (y !== null) {
       transact(y, transaction => {
-        const pos = findPosition(transaction, this, index)
-        insertText(transaction, this, pos, embed, attributes)
+        const pos = findPosition(transaction, this, index, !attributes)
+        insertText(transaction, this, pos, embed, attributes || {})
       })
     } else {
-      /** @type {Array<function>} */ (this._pending).push(() => this.insertEmbed(index, embed, attributes))
+      /** @type {Array<function>} */ (this._pending).push(() => this.insertEmbed(index, embed, attributes || {}))
     }
   }
 
@@ -1135,7 +1174,7 @@ export class YText extends AbstractType {
     const y = this.doc
     if (y !== null) {
       transact(y, transaction => {
-        deleteText(transaction, findPosition(transaction, this, index), length)
+        deleteText(transaction, findPosition(transaction, this, index, true), length)
       })
     } else {
       /** @type {Array<function>} */ (this._pending).push(() => this.delete(index, length))
@@ -1159,7 +1198,7 @@ export class YText extends AbstractType {
     const y = this.doc
     if (y !== null) {
       transact(y, transaction => {
-        const pos = findPosition(transaction, this, index)
+        const pos = findPosition(transaction, this, index, false)
         if (pos.right === null) {
           return
         }
@@ -1229,12 +1268,11 @@ export class YText extends AbstractType {
    *
    * @note Xml-Text nodes don't have attributes. You can use this feature to assign properties to complete text-blocks.
    *
-   * @param {Snapshot} [snapshot]
    * @return {Object<string, any>} A JSON Object that describes the attributes.
    *
    * @public
    */
-  getAttributes (snapshot) {
+  getAttributes () {
     return typeMapGetAll(this)
   }
 
@@ -1247,10 +1285,10 @@ export class YText extends AbstractType {
 }
 
 /**
- * @param {UpdateDecoderV1 | UpdateDecoderV2} decoder
+ * @param {UpdateDecoderV1 | UpdateDecoderV2} _decoder
  * @return {YText}
  *
  * @private
  * @function
  */
-export const readYText = decoder => new YText()
+export const readYText = _decoder => new YText()

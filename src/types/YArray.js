@@ -25,16 +25,7 @@ import { typeListSlice } from './AbstractType.js'
  * @template T
  * @extends YEvent<YArray<T>>
  */
-export class YArrayEvent extends YEvent {
-  /**
-   * @param {YArray<T>} yarray The changed type
-   * @param {Transaction} transaction The transaction object
-   */
-  constructor (yarray, transaction) {
-    super(yarray, transaction)
-    this._transaction = transaction
-  }
-}
+export class YArrayEvent extends YEvent {}
 
 /**
  * A shared Array implementation.
@@ -58,11 +49,14 @@ export class YArray extends AbstractType {
 
   /**
    * Construct a new YArray containing the specified items.
-   * @template T
+   * @template {Object<string,any>|Array<any>|number|null|string|Uint8Array} T
    * @param {Array<T>} items
    * @return {YArray<T>}
    */
   static from (items) {
+    /**
+     * @type {YArray<T>}
+     */
     const a = new YArray()
     a.push(items)
     return a
@@ -84,17 +78,27 @@ export class YArray extends AbstractType {
     this._prelimContent = null
   }
 
+  /**
+   * @return {YArray<T>}
+   */
   _copy () {
     return new YArray()
   }
 
   /**
+   * Makes a copy of this data type that can be included somewhere else.
+   *
+   * Note that the content is only readable _after_ it has been included somewhere in the Ydoc.
+   *
    * @return {YArray<T>}
    */
   clone () {
+    /**
+     * @type {YArray<T>}
+     */
     const arr = new YArray()
     arr.insert(0, this.toArray().map(el =>
-      el instanceof AbstractType ? el.clone() : el
+      el instanceof AbstractType ? /** @type {typeof el} */ (el.clone()) : el
     ))
     return arr
   }
@@ -133,7 +137,7 @@ export class YArray extends AbstractType {
   insert (index, content) {
     if (this.doc !== null) {
       transact(this.doc, transaction => {
-        typeListInsertGenerics(transaction, this, index, content)
+        typeListInsertGenerics(transaction, this, index, /** @type {any} */ (content))
       })
     } else {
       /** @type {Array<any>} */ (this._prelimContent).splice(index, 0, ...content)
@@ -150,7 +154,7 @@ export class YArray extends AbstractType {
   push (content) {
     if (this.doc !== null) {
       transact(this.doc, transaction => {
-        typeListPushGenerics(transaction, this, content)
+        typeListPushGenerics(transaction, this, /** @type {any} */ (content))
       })
     } else {
       /** @type {Array<any>} */ (this._prelimContent).push(...content)
@@ -158,9 +162,9 @@ export class YArray extends AbstractType {
   }
 
   /**
-   * Preppends content to this YArray.
+   * Prepends content to this YArray.
    *
-   * @param {Array<T>} content Array of content to preppend.
+   * @param {Array<T>} content Array of content to prepend.
    */
   unshift (content) {
     this.insert(0, content)
@@ -202,7 +206,8 @@ export class YArray extends AbstractType {
   }
 
   /**
-   * Transforms this YArray to a JavaScript Array.
+   * Returns a portion of this YArray into a JavaScript Array selected
+   * from start to end (end not included).
    *
    * @param {number} [start]
    * @param {number} [end]
@@ -235,7 +240,7 @@ export class YArray extends AbstractType {
   }
 
   /**
-   * Executes a provided function on once on overy element of this YArray.
+   * Executes a provided function once on every element of this YArray.
    *
    * @param {function(T,number,YArray<T>):void} f A function to execute on every element of this YArray.
    */
@@ -259,9 +264,9 @@ export class YArray extends AbstractType {
 }
 
 /**
- * @param {UpdateDecoderV1 | UpdateDecoderV2} decoder
+ * @param {UpdateDecoderV1 | UpdateDecoderV2} _decoder
  *
  * @private
  * @function
  */
-export const readYArray = decoder => new YArray()
+export const readYArray = _decoder => new YArray()

@@ -1,4 +1,3 @@
-
 import {
   removeEventHandlerListener,
   callEventHandlerListeners,
@@ -317,6 +316,10 @@ export class AbstractType {
   }
 
   /**
+   * Makes a copy of this data type that can be included somewhere else.
+   *
+   * Note that the content is only readable _after_ it has been included somewhere in the Ydoc.
+   *
    * @return {AbstractType<EventType>}
    */
   clone () {
@@ -324,9 +327,9 @@ export class AbstractType {
   }
 
   /**
-   * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
+   * @param {UpdateEncoderV1 | UpdateEncoderV2} _encoder
    */
-  _write (encoder) { }
+  _write (_encoder) { }
 
   /**
    * The first non-deleted item
@@ -344,9 +347,9 @@ export class AbstractType {
    * Must be implemented by each type.
    *
    * @param {Transaction} transaction
-   * @param {Set<null|string>} parentSubs Keys changed on this type. `null` if list was modified.
+   * @param {Set<null|string>} _parentSubs Keys changed on this type. `null` if list was modified.
    */
-  _callObserver (transaction, parentSubs) {
+  _callObserver (transaction, _parentSubs) {
     if (!transaction.local && this._searchMarker) {
       this._searchMarker.length = 0
     }
@@ -478,7 +481,7 @@ export const typeListToArraySnapshot = (type, snapshot) => {
 }
 
 /**
- * Executes a provided function on once on overy element of this YArray.
+ * Executes a provided function on once on every element of this YArray.
  *
  * @param {AbstractType<any>} type
  * @param {function(any,number,any):void} f A function to execute on every element of this YArray.
@@ -570,7 +573,7 @@ export const typeListCreateIterator = type => {
 }
 
 /**
- * Executes a provided function on once on overy element of this YArray.
+ * Executes a provided function on once on every element of this YArray.
  * Operates on a snapshotted state of the document.
  *
  * @param {AbstractType<any>} type
@@ -683,7 +686,7 @@ export const typeListInsertGenericsAfter = (transaction, parent, referenceItem, 
   packJsonContent()
 }
 
-const lengthExceeded = error.create('Length exceeded!')
+const lengthExceeded = () => error.create('Length exceeded!')
 
 /**
  * @param {Transaction} transaction
@@ -696,7 +699,7 @@ const lengthExceeded = error.create('Length exceeded!')
  */
 export const typeListInsertGenerics = (transaction, parent, index, content) => {
   if (index > parent._length) {
-    throw lengthExceeded
+    throw lengthExceeded()
   }
   if (index === 0) {
     if (parent._searchMarker) {
@@ -798,7 +801,7 @@ export const typeListDelete = (transaction, parent, index, length) => {
     n = n.right
   }
   if (length > 0) {
-    throw lengthExceeded
+    throw lengthExceeded()
   }
   if (parent._searchMarker) {
     updateMarkerChanges(parent._searchMarker, startIndex, -startLength + length /* in case we remove the above exception */)
@@ -923,6 +926,34 @@ export const typeMapGetSnapshot = (parent, key, snapshot) => {
     v = v.left
   }
   return v !== null && isVisible(v, snapshot) ? v.content.getContent()[v.length - 1] : undefined
+}
+
+/**
+ * @param {AbstractType<any>} parent
+ * @param {Snapshot} snapshot
+ * @return {Object<string,Object<string,any>|number|null|Array<any>|string|Uint8Array|AbstractType<any>|undefined>}
+ *
+ * @private
+ * @function
+ */
+export const typeMapGetAllSnapshot = (parent, snapshot) => {
+  /**
+   * @type {Object<string,any>}
+   */
+  const res = {}
+  parent._map.forEach((value, key) => {
+    /**
+     * @type {Item|null}
+     */
+    let v = value
+    while (v !== null && (!snapshot.sv.has(v.id.client) || v.id.clock >= (snapshot.sv.get(v.id.client) || 0))) {
+      v = v.left
+    }
+    if (v !== null && isVisible(v, snapshot)) {
+      res[key] = v.content.getContent()[v.length - 1]
+    }
+  })
+  return res
 }
 
 /**

@@ -3,6 +3,33 @@ import * as Y from '../src/index.js'
 
 import * as t from 'lib0/testing'
 
+export const testCustomTypings = () => {
+  const ydoc = new Y.Doc()
+  const ymap = ydoc.getMap()
+  /**
+   * @type {Y.XmlElement<{ num: number, str: string, [k:string]: object|number|string }>}
+   */
+  const yxml = ymap.set('yxml', new Y.XmlElement('test'))
+  /**
+   * @type {number|undefined}
+   */
+  const num = yxml.getAttribute('num')
+  /**
+   * @type {string|undefined}
+   */
+  const str = yxml.getAttribute('str')
+  /**
+   * @type {object|number|string|undefined}
+   */
+  const dtrn = yxml.getAttribute('dtrn')
+  const attrs = yxml.getAttributes()
+  /**
+   * @type {object|number|string|undefined}
+   */
+  const any = attrs.shouldBeAny
+  console.log({ num, str, dtrn, attrs, any })
+}
+
 /**
  * @param {t.TestCase} tc
  */
@@ -92,9 +119,9 @@ export const testTreewalker = tc => {
 }
 
 /**
- * @param {t.TestCase} tc
+ * @param {t.TestCase} _tc
  */
-export const testYtextAttributes = tc => {
+export const testYtextAttributes = _tc => {
   const ydoc = new Y.Doc()
   const ytext = /** @type {Y.XmlText} */ (ydoc.get('', Y.XmlText))
   ytext.observe(event => {
@@ -106,9 +133,9 @@ export const testYtextAttributes = tc => {
 }
 
 /**
- * @param {t.TestCase} tc
+ * @param {t.TestCase} _tc
  */
-export const testSiblings = tc => {
+export const testSiblings = _tc => {
   const ydoc = new Y.Doc()
   const yxml = ydoc.getXmlFragment()
   const first = new Y.XmlText()
@@ -122,9 +149,9 @@ export const testSiblings = tc => {
 }
 
 /**
- * @param {t.TestCase} tc
+ * @param {t.TestCase} _tc
  */
-export const testInsertafter = tc => {
+export const testInsertafter = _tc => {
   const ydoc = new Y.Doc()
   const yxml = ydoc.getXmlFragment()
   const first = new Y.XmlText()
@@ -152,9 +179,9 @@ export const testInsertafter = tc => {
 }
 
 /**
- * @param {t.TestCase} tc
+ * @param {t.TestCase} _tc
  */
-export const testClone = tc => {
+export const testClone = _tc => {
   const ydoc = new Y.Doc()
   const yxml = ydoc.getXmlFragment()
   const first = new Y.XmlText('text')
@@ -162,7 +189,6 @@ export const testClone = tc => {
   const third = new Y.XmlElement('p')
   yxml.push([first, second, third])
   t.compareArrays(yxml.toArray(), [first, second, third])
-
   const cloneYxml = yxml.clone()
   ydoc.getArray('copyarr').insert(0, [cloneYxml])
   t.assert(cloneYxml.length === 3)
@@ -170,9 +196,9 @@ export const testClone = tc => {
 }
 
 /**
- * @param {t.TestCase} tc
+ * @param {t.TestCase} _tc
  */
-export const testFormattingBug = tc => {
+export const testFormattingBug = _tc => {
   const ydoc = new Y.Doc()
   const yxml = /** @type {Y.XmlText} */ (ydoc.get('', Y.XmlText))
   const delta = [
@@ -182,4 +208,16 @@ export const testFormattingBug = tc => {
   ]
   yxml.applyDelta(delta)
   t.compare(yxml.toDelta(), delta)
+}
+
+/**
+ * @param {t.TestCase} _tc
+ */
+export const testElement = _tc => {
+  const ydoc = new Y.Doc()
+  const yxmlel = ydoc.getXmlElement()
+  const text1 = new Y.XmlText('text1')
+  const text2 = new Y.XmlText('text2')
+  yxmlel.insert(0, [text1, text2])
+  t.compareArrays(yxmlel.toArray(), [text1, text2])
 }

@@ -1,4 +1,3 @@
-
 import {
   findIndexSS,
   getState,
@@ -171,7 +170,7 @@ export const mergeDeleteSets = dss => {
  * @function
  */
 export const addToDeleteSet = (ds, client, clock, length) => {
-  map.setIfUndefined(ds.clients, client, () => []).push(new DeleteItem(clock, length))
+  map.setIfUndefined(ds.clients, client, () => /** @type {Array<DeleteItem>} */ ([])).push(new DeleteItem(clock, length))
 }
 
 export const createDeleteSet = () => new DeleteSet()
@@ -219,17 +218,21 @@ export const createDeleteSetFromStructStore = ss => {
  */
 export const writeDeleteSet = (encoder, ds) => {
   encoding.writeVarUint(encoder.restEncoder, ds.clients.size)
-  ds.clients.forEach((dsitems, client) => {
-    encoder.resetDsCurVal()
-    encoding.writeVarUint(encoder.restEncoder, client)
-    const len = dsitems.length
-    encoding.writeVarUint(encoder.restEncoder, len)
-    for (let i = 0; i < len; i++) {
-      const item = dsitems[i]
-      encoder.writeDsClock(item.clock)
-      encoder.writeDsLen(item.len)
-    }
-  })
+
+  // Ensure that the delete set is written in a deterministic order
+  array.from(ds.clients.entries())
+    .sort((a, b) => b[0] - a[0])
+    .forEach(([client, dsitems]) => {
+      encoder.resetDsCurVal()
+      encoding.writeVarUint(encoder.restEncoder, client)
+      const len = dsitems.length
+      encoding.writeVarUint(encoder.restEncoder, len)
+      for (let i = 0; i < len; i++) {
+        const item = dsitems[i]
+        encoder.writeDsClock(item.clock)
+        encoder.writeDsLen(item.len)
+      }
+    })
 }
 
 /**
@@ -247,7 +250,7 @@ export const readDeleteSet = decoder => {
     const client = decoding.readVarUint(decoder.restDecoder)
     const numberOfDeletes = decoding.readVarUint(decoder.restDecoder)
     if (numberOfDeletes > 0) {
-      const dsField = map.setIfUndefined(ds.clients, client, () => [])
+      const dsField = map.setIfUndefined(ds.clients, client, () => /** @type {Array<DeleteItem>} */ ([]))
       for (let i = 0; i < numberOfDeletes; i++) {
         dsField.push(new DeleteItem(decoder.readDsClock(), decoder.readDsLen()))
       }
@@ -323,4 +326,24 @@ export const readAndApplyDeleteSet = (decoder, transaction, store) => {
     return ds.toUint8Array()
   }
   return null
+}
+
+/**
+ * @param {DeleteSet} ds1
+ * @param {DeleteSet} ds2
+ */
+export const equalDeleteSets = (ds1, ds2) => {
+  if (ds1.clients.size !== ds2.clients.size) return false
+  for (const [client, deleteItems1] of ds1.clients.entries()) {
+    const deleteItems2 = /** @type {Array<import('../internals.js').DeleteItem>} */ (ds2.clients.get(client))
+    if (deleteItems2 === undefined || deleteItems1.length !== deleteItems2.length) return false
+    for (let i = 0; i < deleteItems1.length; i++) {
+      const di1 = deleteItems1[i]
+      const di2 = deleteItems2[i]
+      if (di1.clock !== di2.clock || di1.len !== di2.len) {
+        return false
+      }
+    }
+  }
+  return true
 }

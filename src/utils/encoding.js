@@ -1,4 +1,3 @@
-
 /**
  * @module encoding
  */
@@ -45,6 +44,7 @@ import * as decoding from 'lib0/decoding'
 import * as binary from 'lib0/binary'
 import * as map from 'lib0/map'
 import * as math from 'lib0/math'
+import * as array from 'lib0/array'
 
 /**
  * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
@@ -87,7 +87,7 @@ export const writeClientsStructs = (encoder, store, _sm) => {
       sm.set(client, clock)
     }
   })
-  getStateVector(store).forEach((clock, client) => {
+  getStateVector(store).forEach((_clock, client) => {
     if (!_sm.has(client)) {
       sm.set(client, 0)
     }
@@ -96,9 +96,8 @@ export const writeClientsStructs = (encoder, store, _sm) => {
   encoding.writeVarUint(encoder.restEncoder, sm.size)
   // Write items with higher client ids first
   // This heavily improves the conflict algorithm.
-  Array.from(sm.entries()).sort((a, b) => b[0] - a[0]).forEach(([client, clock]) => {
-    // @ts-ignore
-    writeStructs(encoder, store.clients.get(client), client, clock)
+  array.from(sm.entries()).sort((a, b) => b[0] - a[0]).forEach(([client, clock]) => {
+    writeStructs(encoder, /** @type {Array<GC|Item>} */ (store.clients.get(client)), client, clock)
   })
 }
 
@@ -155,7 +154,7 @@ export const readClientsStructRefs = (decoder, doc) => {
           // @type {string|null}
           const struct = new Item(
             createID(client, clock),
-            null, // leftd
+            null, // left
             (info & binary.BIT8) === binary.BIT8 ? decoder.readLeftID() : null, // origin
             null, // right
             (info & binary.BIT7) === binary.BIT7 ? decoder.readRightID() : null, // right origin
@@ -179,7 +178,7 @@ export const readClientsStructRefs = (decoder, doc) => {
 
           const struct = new Item(
             createID(client, clock),
-            null, // leftd
+            null, // left
             origin, // origin
             null, // right
             rightOrigin, // right origin
@@ -231,7 +230,7 @@ const integrateStructs = (transaction, store, clientsStructRefs) => {
    */
   const stack = []
   // sort them so that we take the higher id first, in case of conflicts the lower id will probably not conflict with the id from the higher user.
-  let clientsStructRefsIds = Array.from(clientsStructRefs.keys()).sort((a, b) => a - b)
+  let clientsStructRefsIds = array.from(clientsStructRefs.keys()).sort((a, b) => a - b)
   if (clientsStructRefsIds.length === 0) {
     return null
   }
@@ -251,7 +250,7 @@ const integrateStructs = (transaction, store, clientsStructRefs) => {
     return nextStructsTarget
   }
   let curStructsTarget = getNextStructTarget()
-  if (curStructsTarget === null && stack.length === 0) {
+  if (curStructsTarget === null) {
     return null
   }
 
@@ -371,7 +370,7 @@ export const writeStructsFromTransaction = (encoder, transaction) => writeClient
 /**
  * Read and apply a document update.
  *
- * This function has the same effect as `applyUpdate` but accepts an decoder.
+ * This function has the same effect as `applyUpdate` but accepts a decoder.
  *
  * @param {decoding.Decoder} decoder
  * @param {Doc} ydoc
@@ -452,7 +451,7 @@ export const readUpdateV2 = (decoder, ydoc, transactionOrigin, structDecoder = n
 /**
  * Read and apply a document update.
  *
- * This function has the same effect as `applyUpdate` but accepts an decoder.
+ * This function has the same effect as `applyUpdate` but accepts a decoder.
  *
  * @param {decoding.Decoder} decoder
  * @param {Doc} ydoc
@@ -601,7 +600,7 @@ export const decodeStateVector = decodedState => readStateVector(new DSDecoderV1
  */
 export const writeStateVector = (encoder, sv) => {
   encoding.writeVarUint(encoder.restEncoder, sv.size)
-  Array.from(sv.entries()).sort((a, b) => b[0] - a[0]).forEach(([client, clock]) => {
+  array.from(sv.entries()).sort((a, b) => b[0] - a[0]).forEach(([client, clock]) => {
     encoding.writeVarUint(encoder.restEncoder, client) // @todo use a special client decoder that is based on mapping
     encoding.writeVarUint(encoder.restEncoder, clock)
   })

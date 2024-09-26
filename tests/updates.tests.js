@@ -4,6 +4,7 @@ import * as Y from '../src/index.js'
 import { readClientsStructRefs, readDeleteSet, UpdateDecoderV2, UpdateEncoderV2, writeDeleteSet } from '../src/internals.js'
 import * as encoding from 'lib0/encoding'
 import * as decoding from 'lib0/decoding'
+import * as object from 'lib0/object'
 
 /**
  * @typedef {Object} Enc
@@ -14,7 +15,7 @@ import * as decoding from 'lib0/decoding'
  * @property {function(Uint8Array):{from:Map<number,number>,to:Map<number,number>}} Enc.parseUpdateMeta
  * @property {function(Y.Doc):Uint8Array} Enc.encodeStateVector
  * @property {function(Uint8Array):Uint8Array} Enc.encodeStateVectorFromUpdate
- * @property {string} Enc.updateEventName
+ * @property {'update'|'updateV2'} Enc.updateEventName
  * @property {string} Enc.description
  * @property {function(Uint8Array, Uint8Array):Uint8Array} Enc.diffUpdate
  */
@@ -138,7 +139,6 @@ export const testKeyEncoding = tc => {
  */
 const checkUpdateCases = (ydoc, updates, enc, hasDeletes) => {
   const cases = []
-
   // Case 1: Simple case, simply merge everything
   cases.push(enc.mergeUpdates(updates))
 
@@ -169,7 +169,7 @@ const checkUpdateCases = (ydoc, updates, enc, hasDeletes) => {
   // t.info('Target State: ')
   // enc.logUpdate(targetState)
 
-  cases.forEach((mergedUpdates, i) => {
+  cases.forEach((mergedUpdates) => {
     // t.info('State Case $' + i + ':')
     // enc.logUpdate(updates)
     const merged = new Y.Doc({ gc: false })
@@ -218,10 +218,10 @@ const checkUpdateCases = (ydoc, updates, enc, hasDeletes) => {
 }
 
 /**
- * @param {t.TestCase} tc
+ * @param {t.TestCase} _tc
  */
-export const testMergeUpdates1 = tc => {
-  encoders.forEach((enc, i) => {
+export const testMergeUpdates1 = _tc => {
+  encoders.forEach((enc) => {
     t.info(`Using encoder: ${enc.description}`)
     const ydoc = new Y.Doc({ gc: false })
     const updates = /** @type {Array<Uint8Array>} */ ([])
@@ -299,8 +299,59 @@ export const testMergePendingUpdates = tc => {
   Y.applyUpdate(yDoc5, update4)
   Y.applyUpdate(yDoc5, serverUpdates[4])
   // @ts-ignore
-  const update5 = Y.encodeStateAsUpdate(yDoc5) // eslint-disable-line
+  const _update5 = Y.encodeStateAsUpdate(yDoc5) // eslint-disable-line
 
   const yText5 = yDoc5.getText('textBlock')
   t.compareStrings(yText5.toString(), 'nenor')
+}
+
+/**
+ * @param {t.TestCase} _tc
+ */
+export const testObfuscateUpdates = _tc => {
+  const ydoc = new Y.Doc()
+  const ytext = ydoc.getText('text')
+  const ymap = ydoc.getMap('map')
+  const yarray = ydoc.getArray('array')
+  // test ytext
+  ytext.applyDelta([{ insert: 'text', attributes: { bold: true } }, { insert: { href: 'supersecreturl' } }])
+  // test ymap
+  ymap.set('key', 'secret1')
+  ymap.set('key', 'secret2')
+  // test yarray with subtype & subdoc
+  const subtype = new Y.XmlElement('secretnodename')
+  const subdoc = new Y.Doc({ guid: 'secret' })
+  subtype.setAttribute('attr', 'val')
+  yarray.insert(0, ['teststring', 42, subtype, subdoc])
+  // obfuscate the content and put it into a new document
+  const obfuscatedUpdate = Y.obfuscateUpdate(Y.encodeStateAsUpdate(ydoc))
+  const odoc = new Y.Doc()
+  Y.applyUpdate(odoc, obfuscatedUpdate)
+  const otext = odoc.getText('text')
+  const omap = odoc.getMap('map')
+  const oarray = odoc.getArray('array')
+  // test ytext
+  const delta = otext.toDelta()
+  t.assert(delta.length === 2)
+  t.assert(delta[0].insert !== 'text' && delta[0].insert.length === 4)
+  t.assert(object.length(delta[0].attributes) === 1)
+  t.assert(!object.hasProperty(delta[0].attributes, 'bold'))
+  t.assert(object.length(delta[1]) === 1)
+  t.assert(object.hasProperty(delta[1], 'insert'))
+  // test ymap
+  t.assert(omap.size === 1)
+  t.assert(!omap.has('key'))
+  // test yarray with subtype & subdoc
+  const result = oarray.toArray()
+  t.assert(result.length === 4)
+  t.assert(result[0] !== 'teststring')
+  t.assert(result[1] !== 42)
+  const osubtype = /** @type {Y.XmlElement} */ (result[2])
+  const osubdoc = result[3]
+  // test subtype
+  t.assert(osubtype.nodeName !== subtype.nodeName)
+  t.assert(object.length(osubtype.getAttributes()) === 1)
+  t.assert(osubtype.getAttribute('attr') === undefined)
+  // test subdoc
+  t.assert(osubdoc.guid !== subdoc.guid)
 }

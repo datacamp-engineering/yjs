@@ -1,7 +1,60 @@
-import { init, compare, applyRandomTests, Doc } from './testHelper.js' // eslint-disable-line
+import { init } from './testHelper.js' // eslint-disable-line
 
 import * as Y from '../src/index.js'
 import * as t from 'lib0/testing'
+
+export const testInconsistentFormat = () => {
+  /**
+   * @param {Y.Doc} ydoc
+   */
+  const testYjsMerge = ydoc => {
+    const content = /** @type {Y.XmlText} */ (ydoc.get('text', Y.XmlText))
+    content.format(0, 6, { bold: null })
+    content.format(6, 4, { type: 'text' })
+    t.compare(content.toDelta(), [
+      {
+        attributes: { type: 'text' },
+        insert: 'Merge Test'
+      },
+      {
+        attributes: { type: 'text', italic: true },
+        insert: ' After'
+      }
+    ])
+  }
+  const initializeYDoc = () => {
+    const yDoc = new Y.Doc({ gc: false })
+
+    const content = /** @type {Y.XmlText} */ (yDoc.get('text', Y.XmlText))
+    content.insert(0, ' After', { type: 'text', italic: true })
+    content.insert(0, 'Test', { type: 'text' })
+    content.insert(0, 'Merge ', { type: 'text', bold: true })
+    return yDoc
+  }
+  {
+    const yDoc = initializeYDoc()
+    testYjsMerge(yDoc)
+  }
+  {
+    const initialYDoc = initializeYDoc()
+    const yDoc = new Y.Doc({ gc: false })
+    Y.applyUpdate(yDoc, Y.encodeStateAsUpdate(initialYDoc))
+    testYjsMerge(yDoc)
+  }
+}
+
+/**
+ * @param {t.TestCase} tc
+ */
+export const testInfiniteCaptureTimeout = tc => {
+  const { array0 } = init(tc, { users: 3 })
+  const undoManager = new Y.UndoManager(array0, { captureTimeout: Number.MAX_VALUE })
+  array0.push([1, 2, 3])
+  undoManager.stopCapturing()
+  array0.push([4, 5, 6])
+  undoManager.undo()
+  t.compare(array0.toArray(), [1, 2, 3])
+}
 
 /**
  * @param {t.TestCase} tc
@@ -51,9 +104,9 @@ export const testUndoText = tc => {
 
 /**
  * Test case to fix #241
- * @param {t.TestCase} tc
+ * @param {t.TestCase} _tc
  */
-export const testEmptyTypeScope = tc => {
+export const testEmptyTypeScope = _tc => {
   const ydoc = new Y.Doc()
   const um = new Y.UndoManager([], { doc: ydoc })
   const yarray = ydoc.getArray()
@@ -65,9 +118,9 @@ export const testEmptyTypeScope = tc => {
 
 /**
  * Test case to fix #241
- * @param {t.TestCase} tc
+ * @param {t.TestCase} _tc
  */
-export const testDoubleUndo = tc => {
+export const testDoubleUndo = _tc => {
   const doc = new Y.Doc()
   const text = doc.getText()
   text.insert(0, '1221')
@@ -303,9 +356,9 @@ export const testUndoDeleteFilter = tc => {
 
 /**
  * This issue has been reported in https://discuss.yjs.dev/t/undomanager-with-external-updates/454/6
- * @param {t.TestCase} tc
+ * @param {t.TestCase} _tc
  */
-export const testUndoUntilChangePerformed = tc => {
+export const testUndoUntilChangePerformed = _tc => {
   const doc = new Y.Doc()
   const doc2 = new Y.Doc()
   doc.on('update', update => Y.applyUpdate(doc2, update))
@@ -334,9 +387,9 @@ export const testUndoUntilChangePerformed = tc => {
 
 /**
  * This issue has been reported in https://github.com/yjs/yjs/issues/317
- * @param {t.TestCase} tc
+ * @param {t.TestCase} _tc
  */
-export const testUndoNestedUndoIssue = tc => {
+export const testUndoNestedUndoIssue = _tc => {
   const doc = new Y.Doc({ gc: false })
   const design = doc.getMap()
   const undoManager = new Y.UndoManager(design, { captureTimeout: 0 })
@@ -390,9 +443,9 @@ export const testUndoNestedUndoIssue = tc => {
 /**
  * This issue has been reported in https://github.com/yjs/yjs/issues/355
  *
- * @param {t.TestCase} tc
+ * @param {t.TestCase} _tc
  */
-export const testConsecutiveRedoBug = tc => {
+export const testConsecutiveRedoBug = _tc => {
   const doc = new Y.Doc()
   const yRoot = doc.getMap()
   const undoMgr = new Y.UndoManager(yRoot)
@@ -441,9 +494,9 @@ export const testConsecutiveRedoBug = tc => {
 /**
  * This issue has been reported in https://github.com/yjs/yjs/issues/304
  *
- * @param {t.TestCase} tc
+ * @param {t.TestCase} _tc
  */
-export const testUndoXmlBug = tc => {
+export const testUndoXmlBug = _tc => {
   const origin = 'origin'
   const doc = new Y.Doc()
   const fragment = doc.getXmlFragment('t')
@@ -486,9 +539,9 @@ export const testUndoXmlBug = tc => {
 /**
  * This issue has been reported in https://github.com/yjs/yjs/issues/343
  *
- * @param {t.TestCase} tc
+ * @param {t.TestCase} _tc
  */
-export const testUndoBlockBug = tc => {
+export const testUndoBlockBug = _tc => {
   const doc = new Y.Doc({ gc: false })
   const design = doc.getMap()
 
@@ -546,9 +599,9 @@ export const testUndoBlockBug = tc => {
  * Undo text formatting delete should not corrupt peer state.
  *
  * @see https://github.com/yjs/yjs/issues/392
- * @param {t.TestCase} tc
+ * @param {t.TestCase} _tc
  */
-export const testUndoDeleteTextFormat = tc => {
+export const testUndoDeleteTextFormat = _tc => {
   const doc = new Y.Doc()
   const text = doc.getText()
   text.insert(0, 'Attack ships on fire off the shoulder of Orion.')
@@ -584,9 +637,9 @@ export const testUndoDeleteTextFormat = tc => {
  * Undo text formatting delete should not corrupt peer state.
  *
  * @see https://github.com/yjs/yjs/issues/392
- * @param {t.TestCase} tc
+ * @param {t.TestCase} _tc
  */
-export const testBehaviorOfIgnoreremotemapchangesProperty = tc => {
+export const testBehaviorOfIgnoreremotemapchangesProperty = _tc => {
   const doc = new Y.Doc()
   const doc2 = new Y.Doc()
   doc.on('update', update => Y.applyUpdate(doc2, update, doc))
@@ -607,9 +660,9 @@ export const testBehaviorOfIgnoreremotemapchangesProperty = tc => {
  * Special deletion case.
  *
  * @see https://github.com/yjs/yjs/issues/447
- * @param {t.TestCase} tc
+ * @param {t.TestCase} _tc
  */
-export const testSpecialDeletionCase = tc => {
+export const testSpecialDeletionCase = _tc => {
   const origin = 'undoable'
   const doc = new Y.Doc()
   const fragment = doc.getXmlFragment()
@@ -630,4 +683,65 @@ export const testSpecialDeletionCase = tc => {
   t.compareStrings(fragment.toString(), '')
   undoManager.undo()
   t.compareStrings(fragment.toString(), '<test a="1" b="2"></test>')
+}
+
+/**
+ * Deleted entries in a map should be restored on undo.
+ *
+ * @see https://github.com/yjs/yjs/issues/500
+ * @param {t.TestCase} tc
+ */
+export const testUndoDeleteInMap = (tc) => {
+  const { map0 } = init(tc, { users: 3 })
+  const undoManager = new Y.UndoManager(map0, { captureTimeout: 0 })
+  map0.set('a', 'a')
+  map0.delete('a')
+  map0.set('a', 'b')
+  map0.delete('a')
+  map0.set('a', 'c')
+  map0.delete('a')
+  map0.set('a', 'd')
+  t.compare(map0.toJSON(), { a: 'd' })
+  undoManager.undo()
+  t.compare(map0.toJSON(), {})
+  undoManager.undo()
+  t.compare(map0.toJSON(), { a: 'c' })
+  undoManager.undo()
+  t.compare(map0.toJSON(), {})
+  undoManager.undo()
+  t.compare(map0.toJSON(), { a: 'b' })
+  undoManager.undo()
+  t.compare(map0.toJSON(), {})
+  undoManager.undo()
+  t.compare(map0.toJSON(), { a: 'a' })
+}
+
+/**
+ * It should expose the StackItem being processed if undoing
+ *
+ * @param {t.TestCase} _tc
+ */
+export const testUndoDoingStackItem = async (_tc) => {
+  const doc = new Y.Doc()
+  const text = doc.getText('text')
+  const undoManager = new Y.UndoManager([text])
+  undoManager.on('stack-item-added', /** @param {any} event */ event => {
+    event.stackItem.meta.set('str', '42')
+  })
+  let metaUndo = /** @type {any} */ (null)
+  let metaRedo = /** @type {any} */ (null)
+  text.observe((event) => {
+    const /** @type {Y.UndoManager} */ origin = event.transaction.origin
+    if (origin === undoManager && origin.undoing) {
+      metaUndo = origin.currStackItem?.meta.get('str')
+    } else if (origin === undoManager && origin.redoing) {
+      metaRedo = origin.currStackItem?.meta.get('str')
+    }
+  })
+  text.insert(0, 'abc')
+  undoManager.undo()
+  undoManager.redo()
+  t.compare(metaUndo, '42', 'currStackItem is accessible while undoing')
+  t.compare(metaRedo, '42', 'currStackItem is accessible while redoing')
+  t.compare(undoManager.currStackItem, null, 'currStackItem is null after observe/transaction')
 }

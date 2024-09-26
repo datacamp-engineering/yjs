@@ -17,10 +17,11 @@ import {
   transact,
   typeListGet,
   typeListSlice,
-  UpdateDecoderV1, UpdateDecoderV2, UpdateEncoderV1, UpdateEncoderV2, Doc, ContentType, Transaction, Item, YXmlText, YXmlHook, Snapshot // eslint-disable-line
+  UpdateDecoderV1, UpdateDecoderV2, UpdateEncoderV1, UpdateEncoderV2, Doc, ContentType, Transaction, Item, YXmlText, YXmlHook // eslint-disable-line
 } from '../internals.js'
 
 import * as error from 'lib0/error'
+import * as array from 'lib0/array'
 
 /**
  * Define the elements to which a set of CSS queries apply.
@@ -162,6 +163,10 @@ export class YXmlFragment extends AbstractType {
   }
 
   /**
+   * Makes a copy of this data type that can be included somewhere else.
+   *
+   * Note that the content is only readable _after_ it has been included somewhere in the Ydoc.
+   *
    * @return {YXmlFragment}
    */
   clone () {
@@ -237,7 +242,7 @@ export class YXmlFragment extends AbstractType {
   querySelectorAll (query) {
     query = query.toUpperCase()
     // @ts-ignore
-    return Array.from(new YXmlTreeWalker(this, element => element.nodeName && element.nodeName.toUpperCase() === query))
+    return array.from(new YXmlTreeWalker(this, element => element.nodeName && element.nodeName.toUpperCase() === query))
   }
 
   /**
@@ -375,9 +380,9 @@ export class YXmlFragment extends AbstractType {
   }
 
   /**
-   * Preppends content to this YArray.
+   * Prepends content to this YArray.
    *
-   * @param {Array<YXmlElement|YXmlText>} content Array of content to preppend.
+   * @param {Array<YXmlElement|YXmlText>} content Array of content to prepend.
    */
   unshift (content) {
     this.insert(0, content)
@@ -394,7 +399,8 @@ export class YXmlFragment extends AbstractType {
   }
 
   /**
-   * Transforms this YArray to a JavaScript Array.
+   * Returns a portion of this YXmlFragment into a JavaScript Array selected
+   * from start to end (end not included).
    *
    * @param {number} [start]
    * @param {number} [end]
@@ -405,9 +411,9 @@ export class YXmlFragment extends AbstractType {
   }
 
   /**
-   * Executes a provided function on once on overy child element.
+   * Executes a provided function on once on every child element.
    *
-   * @param {function(YXmlElement|YXmlText,number, typeof this):void} f A function to execute on every element of this YArray.
+   * @param {function(YXmlElement|YXmlText,number, typeof self):void} f A function to execute on every element of this YArray.
    */
   forEach (f) {
     typeListForEach(this, f)
@@ -427,10 +433,10 @@ export class YXmlFragment extends AbstractType {
 }
 
 /**
- * @param {UpdateDecoderV1 | UpdateDecoderV2} decoder
+ * @param {UpdateDecoderV1 | UpdateDecoderV2} _decoder
  * @return {YXmlFragment}
  *
  * @private
  * @function
  */
-export const readYXmlFragment = decoder => new YXmlFragment()
+export const readYXmlFragment = _decoder => new YXmlFragment()

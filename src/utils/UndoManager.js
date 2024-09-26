@@ -10,14 +10,15 @@ import {
   getItemCleanStart,
   isDeleted,
   addToDeleteSet,
-  Transaction, Doc, Item, GC, DeleteSet, AbstractType, YEvent // eslint-disable-line
+  YEvent, Transaction, Doc, Item, GC, DeleteSet, AbstractType // eslint-disable-line
 } from '../internals.js'
 
 import * as time from 'lib0/time'
 import * as array from 'lib0/array'
-import { Observable } from 'lib0/observable'
+import * as logging from 'lib0/logging'
+import { ObservableV2 } from 'lib0/observable'
 
-class StackItem {
+export class StackItem {
   /**
    * @param {DeleteSet} deletions
    * @param {DeleteSet} insertions
@@ -47,15 +48,10 @@ const clearUndoManagerStackItem = (tr, um, stackItem) => {
 /**
  * @param {UndoManager} undoManager
  * @param {Array<StackItem>} stack
- * @param {string} eventType
+ * @param {'undo'|'redo'} eventType
  * @return {StackItem?}
  */
 const popStackItem = (undoManager, stack, eventType) => {
-  /**
-   * Whether a change happened
-   * @type {StackItem?}
-   */
-  let result = null
   /**
    * Keep a reference to the transaction so we can fire the event with the changedParentTypes
    * @type {any}
@@ -64,7 +60,7 @@ const popStackItem = (undoManager, stack, eventType) => {
   const doc = undoManager.doc
   const scope = undoManager.scope
   transact(doc, transaction => {
-    while (stack.length > 0 && result === null) {
+    while (stack.length > 0 && undoManager.currStackItem === null) {
       const store = doc.store
       const stackItem = /** @type {StackItem} */ (stack.pop())
       /**
@@ -101,7 +97,7 @@ const popStackItem = (undoManager, stack, eventType) => {
         }
       })
       itemsToRedo.forEach(struct => {
-        performedChange = redoItem(transaction, struct, itemsToRedo, stackItem.insertions, undoManager.ignoreRemoteMapChanges) !== null || performedChange
+        performedChange = redoItem(transaction, struct, itemsToRedo, stackItem.insertions, undoManager.ignoreRemoteMapChanges, undoManager) !== null || performedChange
       })
       // We want to delete in reverse order so that children are deleted before
       // parents, so we have more information available when items are filtered.
@@ -112,7 +108,7 @@ const popStackItem = (undoManager, stack, eventType) => {
           performedChange = true
         }
       }
-      result = performedChange ? stackItem : null
+      undoManager.currStackItem = performedChange ? stackItem : null
     }
     transaction.changed.forEach((subProps, type) => {
       // destroy search marker if necessary
@@ -122,11 +118,13 @@ const popStackItem = (undoManager, stack, eventType) => {
     })
     _tr = transaction
   }, undoManager)
-  if (result != null) {
+  const res = undoManager.currStackItem
+  if (res != null) {
     const changedParentTypes = _tr.changedParentTypes
-    undoManager.emit('stack-item-popped', [{ stackItem: result, type: eventType, changedParentTypes }, undoManager])
+    undoManager.emit('stack-item-popped', [{ stackItem: res, type: eventType, changedParentTypes, origin: undoManager }, undoManager])
+    undoManager.currStackItem = null
   }
-  return result
+  return res
 }
 
 /**
@@ -143,22 +141,30 @@ const popStackItem = (undoManager, stack, eventType) => {
  */
 
 /**
+ * @typedef {Object} StackItemEvent
+ * @property {StackItem} StackItemEvent.stackItem
+ * @property {any} StackItemEvent.origin
+ * @property {'undo'|'redo'} StackItemEvent.type
+ * @property {Map<AbstractType<YEvent<any>>,Array<YEvent<any>>>} StackItemEvent.changedParentTypes
+ */
+
+/**
  * Fires 'stack-item-added' event when a stack item was added to either the undo- or
  * the redo-stack. You may store additional stack information via the
  * metadata property on `event.stackItem.meta` (it is a `Map` of metadata properties).
  * Fires 'stack-item-popped' event when a stack item was popped from either the
  * undo- or the redo-stack. You may restore the saved stack information from `event.stackItem.meta`.
  *
- * @extends {Observable<'stack-item-added'|'stack-item-popped'|'stack-cleared'|'stack-item-updated'>}
+ * @extends {ObservableV2<{'stack-item-added':function(StackItemEvent, UndoManager):void, 'stack-item-popped': function(StackItemEvent, UndoManager):void, 'stack-cleared': function({ undoStackCleared: boolean, redoStackCleared: boolean }):void, 'stack-item-updated': function(StackItemEvent, UndoManager):void }>}
  */
-export class UndoManager extends Observable {
+export class UndoManager extends ObservableV2 {
   /**
    * @param {AbstractType<any>|Array<AbstractType<any>>} typeScope Accepts either a single type, or an array of types
    * @param {UndoManagerOptions} options
    */
   constructor (typeScope, {
     captureTimeout = 500,
-    captureTransaction = tr => true,
+    captureTransaction = _tr => true,
     deleteFilter = () => true,
     trackedOrigins = new Set([null]),
     ignoreRemoteMapChanges = false,
@@ -169,6 +175,7 @@ export class UndoManager extends Observable {
      * @type {Array<AbstractType<any>>}
      */
     this.scope = []
+    this.doc = doc
     this.addToScope(typeScope)
     this.deleteFilter = deleteFilter
     trackedOrigins.add(this)
@@ -189,9 +196,15 @@ export class UndoManager extends Observable {
      */
     this.undoing = false
     this.redoing = false
-    this.doc = doc
+    /**
+     * The currently popped stack item if UndoManager.undoing or UndoManager.redoing
+     *
+     * @type {StackItem|null}
+     */
+    this.currStackItem = null
     this.lastChange = 0
     this.ignoreRemoteMapChanges = ignoreRemoteMapChanges
+    this.captureTimeout = captureTimeout
     /**
      * @param {Transaction} transaction
      */
@@ -223,7 +236,7 @@ export class UndoManager extends Observable {
       })
       const now = time.getUnixTime()
       let didAdd = false
-      if (now - this.lastChange < captureTimeout && stack.length > 0 && !undoing && !redoing) {
+      if (this.lastChange > 0 && now - this.lastChange < this.captureTimeout && stack.length > 0 && !undoing && !redoing) {
         // append change to last stack op
         const lastOp = stack[stack.length - 1]
         lastOp.deletions = mergeDeleteSets([lastOp.deletions, transaction.deleteSet])
@@ -242,6 +255,9 @@ export class UndoManager extends Observable {
           keepItem(item, true)
         }
       })
+      /**
+       * @type {[StackItemEvent, UndoManager]}
+       */
       const changeEvent = [{ stackItem: stack[stack.length - 1], origin: transaction.origin, type: undoing ? 'redo' : 'undo', changedParentTypes: transaction.changedParentTypes }, this]
       if (didAdd) {
         this.emit('stack-item-added', changeEvent)
@@ -262,6 +278,7 @@ export class UndoManager extends Observable {
     ytypes = array.isArray(ytypes) ? ytypes : [ytypes]
     ytypes.forEach(ytype => {
       if (this.scope.every(yt => yt !== ytype)) {
+        if (ytype.doc !== this.doc) logging.warn('[yjs#509] Not same Y.Doc') // use MultiDocUndoManager instead. also see https://github.com/yjs/yjs/issues/509
         this.scope.push(ytype)
       }
     })

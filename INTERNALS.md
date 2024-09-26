@@ -26,7 +26,7 @@ article](https://blog.kevinjahns.de/are-crdts-suitable-for-shared-editing/).
 
 Each client is assigned a unique *clientID* property on first insert. This is a
 random 53-bit integer (53 bits because that fits in the javascript safe integer
-range).
+range \[JavaScript uses IEEE 754 floats\]).
 
 ## List items
 
@@ -88,7 +88,7 @@ When a local insert happens, Yjs needs to map the insert position in the
 document (eg position 1000) to an ID. With just the linked list, this would
 require a slow O(n) linear scan of the list. But when editing a document, most
 inserts are either at the same position as the last insert, or nearby. To
-improve performance, Yjs stores a cache of the 10 most recently looked up
+improve performance, Yjs stores a cache of the 80 most recently looked up
 insert positions in the document. This is consulted and updated when a position
 is looked up to improve performance in the average case. The cache is updated
 using a heuristic that is still changing (currently, it is updated when a new
@@ -149,8 +149,8 @@ concepts that can be used to create a custom network protocol:
 
 * `update`: The Yjs document can be encoded to an *update* object that can be
   parsed to reconstruct the document. Also every change on the document fires
-an incremental document updates that allows clients to sync with each other.
-The update object is an Uint8Array that efficiently encodes `Item` objects and
+an incremental document update that allows clients to sync with each other.
+The update object is a Uint8Array that efficiently encodes `Item` objects and
 the delete set.
 * `state vector`: A state vector defines the known state of each user (a set of
   tuples `(client, clock)`). This object is also efficiently encoded as a

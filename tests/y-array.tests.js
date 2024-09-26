@@ -33,6 +33,17 @@ export const testSlice = tc => {
 }
 
 /**
+ * @param {t.TestCase} tc
+ */
+export const testArrayFrom = tc => {
+  const doc1 = new Y.Doc()
+  const db1 = doc1.getMap('root')
+  const nestedArray1 = Y.Array.from([0, 1, 2])
+  db1.set('array', nestedArray1)
+  t.compare(nestedArray1.toArray(), [0, 1, 2])
+}
+
+/**
  * Debugging yjs#297 - a critical bug connected to the search-marker approach
  *
  * @param {t.TestCase} tc
@@ -317,6 +328,29 @@ export const testObserveDeepEventOrder = tc => {
   for (let i = 1; i < events.length; i++) {
     t.assert(events[i - 1].path.length <= events[i].path.length, 'path size increases, fire top-level events first')
   }
+}
+
+/**
+ * Correct index when computing event.path in observeDeep - https://github.com/yjs/yjs/issues/457
+ *
+ * @param {t.TestCase} _tc
+ */
+export const testObservedeepIndexes = _tc => {
+  const doc = new Y.Doc()
+  const map = doc.getMap()
+  // Create a field with the array as value
+  map.set('my-array', new Y.Array())
+  // Fill the array with some strings and our Map
+  map.get('my-array').push(['a', 'b', 'c', new Y.Map()])
+  /**
+   * @type {Array<any>}
+   */
+  let eventPath = []
+  map.observeDeep((events) => { eventPath = events[0].path })
+  // set a value on the map inside of our array
+  map.get('my-array').get(3).set('hello', 'world')
+  console.log(eventPath)
+  t.compare(eventPath, ['my-array', 3])
 }
 
 /**

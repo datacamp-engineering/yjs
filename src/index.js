@@ -18,8 +18,10 @@ export {
   Item,
   AbstractStruct,
   GC,
+  Skip,
   ContentBinary,
   ContentDeleted,
+  ContentDoc,
   ContentEmbed,
   ContentFormat,
   ContentJSON,
@@ -50,6 +52,7 @@ export {
   getItem,
   typeListToArraySnapshot,
   typeMapGetSnapshot,
+  typeMapGetAllSnapshot,
   createDocFromSnapshot,
   iterateDeletedStructs,
   applyUpdate,
@@ -90,7 +93,15 @@ export {
   diffUpdateV2,
   convertUpdateFormatV1ToV2,
   convertUpdateFormatV2ToV1,
-  UpdateEncoderV1
+  obfuscateUpdate,
+  obfuscateUpdateV2,
+  UpdateEncoderV1,
+  UpdateEncoderV2,
+  UpdateDecoderV1,
+  UpdateDecoderV2,
+  equalDeleteSets,
+  mergeDeleteSets,
+  snapshotContainsUpdate
 } from './internals.js'
 
 const glo = /** @type {any} */ (typeof globalThis !== 'undefined'

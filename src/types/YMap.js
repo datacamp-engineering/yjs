@@ -1,4 +1,3 @@
-
 /**
  * @module YMap
  */
@@ -41,7 +40,7 @@ export class YMapEvent extends YEvent {
  * A shared Map implementation.
  *
  * @extends AbstractType<YMapEvent<MapType>>
- * @implements {Iterable<MapType>}
+ * @implements {Iterable<[string, MapType]>}
  */
 export class YMap extends AbstractType {
   /**
@@ -81,17 +80,27 @@ export class YMap extends AbstractType {
     this._prelimContent = null
   }
 
+  /**
+   * @return {YMap<MapType>}
+   */
   _copy () {
     return new YMap()
   }
 
   /**
+   * Makes a copy of this data type that can be included somewhere else.
+   *
+   * Note that the content is only readable _after_ it has been included somewhere in the Ydoc.
+   *
    * @return {YMap<MapType>}
    */
   clone () {
+    /**
+     * @type {YMap<MapType>}
+     */
     const map = new YMap()
     this.forEach((value, key) => {
-      map.set(key, value instanceof AbstractType ? value.clone() : value)
+      map.set(key, value instanceof AbstractType ? /** @type {typeof value} */ (value.clone()) : value)
     })
     return map
   }
@@ -146,7 +155,7 @@ export class YMap extends AbstractType {
   /**
    * Returns the values for each element in the YMap Type.
    *
-   * @return {IterableIterator<any>}
+   * @return {IterableIterator<MapType>}
    */
   values () {
     return iterator.iteratorMap(createMapIterator(this._map), /** @param {any} v */ v => v[1].content.getContent()[v[1].length - 1])
@@ -155,10 +164,10 @@ export class YMap extends AbstractType {
   /**
    * Returns an Iterator of [key, value] pairs
    *
-   * @return {IterableIterator<any>}
+   * @return {IterableIterator<[string, MapType]>}
    */
   entries () {
-    return iterator.iteratorMap(createMapIterator(this._map), /** @param {any} v */ v => [v[0], v[1].content.getContent()[v[1].length - 1]])
+    return iterator.iteratorMap(createMapIterator(this._map), /** @param {any} v */ v => /** @type {any} */ ([v[0], v[1].content.getContent()[v[1].length - 1]]))
   }
 
   /**
@@ -177,7 +186,7 @@ export class YMap extends AbstractType {
   /**
    * Returns an Iterator of [key, value] pairs
    *
-   * @return {IterableIterator<any>}
+   * @return {IterableIterator<[string, MapType]>}
    */
   [Symbol.iterator] () {
     return this.entries()
@@ -200,14 +209,16 @@ export class YMap extends AbstractType {
 
   /**
    * Adds or updates an element with a specified key and value.
+   * @template {MapType} VAL
    *
    * @param {string} key The key of the element to add to this YMap
-   * @param {MapType} value The value of the element to add
+   * @param {VAL} value The value of the element to add
+   * @return {VAL}
    */
   set (key, value) {
     if (this.doc !== null) {
       transact(this.doc, transaction => {
-        typeMapSet(transaction, this, key, value)
+        typeMapSet(transaction, this, key, /** @type {any} */ (value))
       })
     } else {
       /** @type {Map<string, any>} */ (this._prelimContent).set(key, value)
@@ -241,7 +252,7 @@ export class YMap extends AbstractType {
   clear () {
     if (this.doc !== null) {
       transact(this.doc, transaction => {
-        this.forEach(function (value, key, map) {
+        this.forEach(function (_value, key, map) {
           typeMapDelete(transaction, map, key)
         })
       })
@@ -259,9 +270,9 @@ export class YMap extends AbstractType {
 }
 
 /**
- * @param {UpdateDecoderV1 | UpdateDecoderV2} decoder
+ * @param {UpdateDecoderV1 | UpdateDecoderV2} _decoder
  *
  * @private
  * @function
  */
-export const readYMap = decoder => new YMap()
+export const readYMap = _decoder => new YMap()
